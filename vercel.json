@@ -15,14 +15,7 @@
       "entrypoint": "main:app",
       "functions": {
         "main.py": {
-          "maxDuration": 90,
-          "experimentalTriggers": [
-            {
-              "type": "queue/v2beta",
-              "topic": "quote-dispatch",
-              "retryAfterSeconds": 60
-            }
-          ]
+          "maxDuration": 90
         }
       }
     }
