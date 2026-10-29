@@ -1,6 +1,6 @@
 """假澳得仕報價 API（狀態存在 Supabase 的 mock_partner schema）。
 
-公開端點：GET/POST /api/mock-aud/api/rfq/quotes —— 回應跟澳得仕正式站一致（契約 2026-10-29.4）。
+公開端點：GET/POST /api/mock-aud/api/rfq/quotes —— 回應照澳得仕契約 2026-10-29.5。
 控制端點：/api/mock-aud/_admin/* —— 要登入，用來發布／退回候選、改詢價單狀態、注入故障。
 """
 
@@ -34,7 +34,8 @@ admin = APIRouter(prefix="/api/mock-aud/_admin", dependencies=[Depends(require_u
 
 MAX_BODY = 64 * 1024
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:/+=@-]{1,80}$")
-CONTRACT = json.loads((Path(__file__).with_name("contract-2026-10-29.4.json")).read_text("utf-8"))
+CONTRACT = json.loads((Path(__file__).with_name("contract-2026-10-29.5.json")).read_text("utf-8"))
+CONTRACT_VERSION = CONTRACT["contract_version"]
 TPE = ZoneInfo("Asia/Taipei")
 SEEDS = {
     "AUD-RFQ-2026-0099": ("sent", False, True),
@@ -94,10 +95,12 @@ def _cand_from_row(r) -> dict:
     return d
 
 
-async def _receive(conn, number: str, body: dict, event_id: str | None, request_id: str) -> dict:
+async def _receive(conn, number: str, body: dict, event_id: str | None, request_id: str, self_test: bool = False) -> dict:
     rfq = (await conn.execute(text("SELECT * FROM mock_partner.rfqs WHERE number=:n FOR UPDATE"), {"n": number})).mappings().first()
     if not rfq:
         raise L.NotFound(f"找不到詢價編號 {number}")
+    if self_test and not rfq["is_test"]:
+        raise L.Conflict(f"{number} 不是測試單；X-Self-Test 只能打測試單，什麼都沒寫", "not_test_rfq")
     cands = [_cand_from_row(r) for r in (await conn.execute(text("SELECT * FROM mock_partner.candidates WHERE rfq_number=:n ORDER BY revision"), {"n": number})).mappings()]
     h = L.payload_hash(body)
     if event_id:
@@ -120,6 +123,16 @@ async def _receive(conn, number: str, body: dict, event_id: str | None, request_
     expect = {"quantity": rfq["quantity"], "unit": rfq["unit"], "item_name": rfq["item_name"], "material_text": rfq["material_text"]}
     parsed = L.parse_quote(body, expect, _today())
     quote, issues, qrev = parsed["quote"], parsed["issues"], parsed["quote_revision"]
+    spec_rev = parsed["rfq_revision"]
+    if spec_rev is not None and spec_rev > rfq["spec_revision"]:
+        raise L.Conflict(f"規格版次 {spec_rev} 不是我方寄出過的版次（目前寄到第 {rfq['spec_revision']} 版）", "rfq_revision_unknown")
+    if spec_rev is None:
+        if rfq["spec_revision"] == 1:
+            spec_rev = 1
+        else:
+            issues.append(L.issue("spec_unbound", "error", "rfq_revision", "沒帶 rfq_revision，可能寄達的規格不只一版，要人工指定"))
+    elif spec_rev < rfq["spec_revision"]:
+        issues.append(L.issue("spec_outdated", "review", "rfq_revision", f"這份報價對應第 {spec_rev} 版規格，目前是第 {rfq['spec_revision']} 版", got=spec_rev, expected=rfq["spec_revision"]))
     published = next((c for c in cands if rfq["published_candidate_id"] and c["id"] == str(rfq["published_candidate_id"])), None)
     if qrev and published:
         cmp = L.compare_revisions(qrev, published["quote_revision"])
@@ -140,11 +153,12 @@ async def _receive(conn, number: str, body: dict, event_id: str | None, request_
         "event_id": event_id,
         "quote_revision": qrev,
         "issues": issues,
+        "spec_revision": spec_rev,
     }
     await conn.execute(
         text(
-            "INSERT INTO mock_partner.candidates (id, rfq_number, revision, status, event_id, quote_revision, payload, payload_hash, parsed, issues, request_id) "
-            "VALUES (:id, :n, :rev, 'pending', :ev, :qrev, CAST(:p AS jsonb), :h, CAST(:parsed AS jsonb), CAST(:issues AS jsonb), :rid)"
+            "INSERT INTO mock_partner.candidates (id, rfq_number, revision, status, event_id, quote_revision, payload, payload_hash, parsed, issues, request_id, spec_revision, self_test) "
+            "VALUES (:id, :n, :rev, 'pending', :ev, :qrev, CAST(:p AS jsonb), :h, CAST(:parsed AS jsonb), CAST(:issues AS jsonb), :rid, :srev, :st)"
         ),
         {
             "id": cand["id"],
@@ -157,6 +171,8 @@ async def _receive(conn, number: str, body: dict, event_id: str | None, request_
             "parsed": json.dumps(L.canonical(quote), ensure_ascii=False),
             "issues": json.dumps(issues, ensure_ascii=False),
             "rid": request_id,
+            "srev": spec_rev,
+            "st": self_test,
         },
     )
     return {"duplicate": False, "candidate": cand}
@@ -168,14 +184,17 @@ async def post_quote(req: Request) -> JSONResponse:
     request_id = raw_rid if REQUEST_ID_RE.match(raw_rid) else "req_" + base64.urlsafe_b64encode(secrets.token_bytes(9)).decode().rstrip("=")
     entry: dict[str, Any] = {"request_id": request_id}
 
-    async def reply(body: dict, status: int) -> JSONResponse:
-        out = {**body, "request_id": request_id}
+    async def reply(body: dict, status: int, retry_after: int | None = None) -> JSONResponse:
+        out = {**body, "request_id": request_id, "contract_version": CONTRACT_VERSION}
         entry.update({"status": status, "response": out})
         try:
             await _log(entry)
         except Exception:  # noqa: BLE001 - 紀錄失敗不影響回應
             pass
-        return JSONResponse(out, status_code=status, headers={"X-Request-Id": request_id, "Cache-Control": "no-store"})
+        headers = {"X-Request-Id": request_id, "Cache-Control": "no-store"}
+        if retry_after is not None:
+            headers["Retry-After"] = str(retry_after)
+        return JSONResponse(out, status_code=status, headers=headers)
 
     fault = await _pop_fault()
     if fault:
@@ -190,11 +209,12 @@ async def post_quote(req: Request) -> JSONResponse:
             b = {"error": fault.get("error", f"模擬故障 {fault['status']}")}
             if fault.get("code"):
                 b["code"] = fault["code"]
-            return await reply(b, int(fault["status"]))
+            ra = fault.get("retry_after")
+            return await reply(b, int(fault["status"]), int(ra) if ra is not None else None)
 
     token = config.settings.mock_aud_token
     if len(token.strip()) < 24:
-        return await reply({"error": "這個網址還沒啟用（尚未設定 RFQ_WEBHOOK_TOKEN）"}, 503)
+        return await reply({"error": "這個網址還沒啟用（尚未設定 token）", "code": "disabled"}, 503)
     m = re.match(r"^\s*Bearer\s+(\S+)\s*$", req.headers.get("authorization") or "", re.I)
     if not m or not hmac.compare_digest(hashlib.sha256(m[1].encode()).digest(), hashlib.sha256(token.strip().encode()).digest()):
         return await reply({"error": "未授權：請帶 Authorization: Bearer <token>"}, 401)
@@ -231,22 +251,23 @@ async def post_quote(req: Request) -> JSONResponse:
         return await reply({"error": msg, "issues": [{"code": "event_id_mismatch", "level": "error", "field": "event_id", "message": msg}]}, 400)
     event_id = h_event or b_event
     entry.update({"rfq": number, "event_id": event_id})
+    self_test = (req.headers.get("x-self-test") or "").strip() == "1"
     try:
         async with db.tx() as conn:
-            result = await _receive(conn, number, body, event_id, request_id)
+            result = await _receive(conn, number, body, event_id, request_id, self_test)
     except L.NotFound as e:
         return await reply({"error": str(e)}, 404)
     except L.PayloadError as e:
         return await reply({"error": str(e), "issues": [i for i in e.issues if i["level"] == "error"]}, 400)
     except L.Conflict as e:
-        return await reply({"error": str(e), "code": e.code}, 409)
+        return await reply({"error": str(e), "code": e.code}, 409, {"send_pending": 300}.get(e.code))
     except IntegrityError:
-        return await reply({"error": "同一個 event_id 正在處理（同時送了兩次），只收一次；稍後重送同一份會拿到既有結果", "code": "event_in_flight"}, 409)
+        return await reply({"error": "同一個 event_id 正在處理（同時送了兩次），只收一次；稍後重送同一份會拿到既有結果", "code": "event_in_flight"}, 409, 5)
     cand = result["candidate"]
     base = {"ok": True, "rfq": number, "candidate_id": cand["id"], "candidate_revision": cand["revision"]}
     if result["duplicate"]:
         return await reply({**base, "outcome": "duplicate", "status": cand["status"]}, 200)
-    return await reply({**base, "outcome": "pending_review", "issues": [i for i in cand["issues"] if i["level"] != "info"]}, 202)
+    return await reply({**base, "outcome": "pending_review", "spec_revision": cand.get("spec_revision"), "issues": [i for i in cand["issues"] if i["level"] != "info"]}, 202)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +322,9 @@ async def candidate_action(number: str, cid: str, action: str) -> dict:
 
 @admin.patch("/rfqs/{number}")
 async def patch_rfq(number: str, body: dict) -> dict:
-    allowed = {k: body[k] for k in ("status", "send_pending", "snapshot") if k in body}
+    allowed = {k: body[k] for k in ("status", "send_pending", "snapshot", "spec_revision", "is_test") if k in body}
+    if "spec_revision" in allowed and (not isinstance(allowed["spec_revision"], int) or isinstance(allowed["spec_revision"], bool) or allowed["spec_revision"] < 1):
+        raise HTTPException(400, "spec_revision 要是正整數")
     if not allowed:
         raise HTTPException(400, "沒有可改的欄位")
     sets = ", ".join(f"{k}=:{k}" for k in allowed)
@@ -339,5 +362,5 @@ async def reset() -> dict:
         await conn.execute(text("DELETE FROM mock_partner.request_log"))
         await conn.execute(text("UPDATE mock_partner.rfqs SET published_candidate_id=NULL, status=CASE WHEN status='quoted' THEN 'sent' ELSE status END"))
         for n, (st, sp, snap) in SEEDS.items():
-            await conn.execute(text("UPDATE mock_partner.rfqs SET status=:st, send_pending=:sp, snapshot=:snap WHERE number=:n"), {"st": st, "sp": sp, "snap": snap, "n": n})
+            await conn.execute(text("UPDATE mock_partner.rfqs SET status=:st, send_pending=:sp, snapshot=:snap, spec_revision=1, is_test=false WHERE number=:n"), {"st": st, "sp": sp, "snap": snap, "n": n})
     return {"ok": True}

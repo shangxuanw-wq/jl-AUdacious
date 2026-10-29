@@ -22,6 +22,11 @@ const REASONS = {
   bad_quantity: '數量不對',
   subject_rfq_mismatch: '主旨與內文的詢價編號不同',
   multiple_items_ignored: '有多個工件，只讀了工件1',
+  same_spec_resent: '同一版規格重寄，不用重新報價',
+  spec_revision_up: '規格改版，請照新版重新報價',
+  older_spec_revision: '比目前的規格版次舊',
+  spec_revision_missing: '信上沒有「規格版次」',
+  bad_spec_revision: '規格版次格式不對',
 }
 
 const CONNECT_ERRORS = {

@@ -1,6 +1,6 @@
 """報價金額計算與契約 payload（純函式，不碰資料庫）。
 
-契約：澳得仕 2026-10-29.4 第 4.2 節。數字一律是 JSON 數字，絕不送字串。
+契約：澳得仕 2026-10-29.5 第 4.3 節。數字一律是 JSON 數字，絕不送字串。
 """
 
 from __future__ import annotations
@@ -95,6 +95,8 @@ def build_payload(*, rfq: dict, quote: dict, items: list[dict], event_id: str, v
     }
     if "tax" in nums:
         payload["tax"] = nums["tax"]
+    if quote.get("rfq_revision"):
+        payload["rfq_revision"] = int(quote["rfq_revision"])
     if quote.get("delivery_date"):
         payload["delivery_date"] = quote["delivery_date"].isoformat()
     if quote.get("note"):

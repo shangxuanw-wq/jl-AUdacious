@@ -33,6 +33,8 @@ class Settings:
     access_key: str
     selftest_key: str
     cron_secret: str
+    inline_retry_seconds: float
+    mail_reply_mode: str
     mail_token_key: str
     rfq_mailbox: str
     rfq_sender_allow: frozenset[str]
@@ -83,6 +85,10 @@ def load_settings() -> Settings:
         access_key=_env("APP_ACCESS_KEY"),
         selftest_key=_env("SELFTEST_KEY"),
         cron_secret=_env("CRON_SECRET"),
+        # 送出當下就地重試（2、5、15 秒）最多花多久；超過就交給背景
+        # 報價回信寄給誰：live（承辦人）／self（只寄給自己）／off；空的＝送正式站時 live，其他 self
+        mail_reply_mode=_env("RFQ_MAIL_REPLY").lower(),
+        inline_retry_seconds=float(_env("RFQ_INLINE_RETRY_SECONDS", "45") or 45),
         mail_token_key=_env("MAIL_TOKEN_KEY"),
         rfq_mailbox=(_env("RFQ_MAILBOX", "jl-jimmy@jauhlirn.com") or "jl-jimmy@jauhlirn.com").lower(),
         # 只收這些寄件人（完整信箱或 @網域），逗號分隔；空的 = 不限制

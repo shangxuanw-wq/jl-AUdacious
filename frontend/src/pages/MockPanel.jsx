@@ -7,7 +7,9 @@ const FAULTS = [
   ['429', [{ status: 429 }]],
   ['逾時（35 秒）', [{ delay: 35 }]],
   ['409 event_in_flight', [{ status: 409, code: 'event_in_flight' }]],
-  ['503 六次（會放棄）', Array(6).fill({ status: 503 })],
+  ['503 維修中（Retry-After 600）', [{ status: 503, code: 'maintenance', retry_after: 600 }]],
+  ['503 未啟用（不重送）', [{ status: 503, code: 'disabled' }]],
+  ['503 八次（會放棄）', Array(8).fill({ status: 503 })],
 ]
 
 export default function MockPanel() {
@@ -38,7 +40,7 @@ export default function MockPanel() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">假澳得仕</h1>
-          <p className="text-sm text-stone-500">開發用的對方系統：照契約 2026-10-29.4 回應。這裡可以模擬澳得仕人員發布／退回，或讓下一次請求故障。</p>
+          <p className="text-sm text-stone-500">開發用的對方系統：照契約 2026-10-29.5 回應。這裡可以模擬澳得仕人員發布／退回，或讓下一次請求故障。</p>
         </div>
         <div className="flex gap-2">
           <button className="btn-ghost" onClick={load} disabled={busy}>重新整理</button>
@@ -70,6 +72,13 @@ export default function MockPanel() {
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-mono font-medium">{r.number}</span>
               <span className="text-sm text-stone-600">{r.item_name}｜{r.material_text}｜{r.quantity} {r.unit}</span>
+              <span className="inline-flex items-center gap-1 text-xs text-stone-600">
+                規格版次 {r.spec_revision}
+                <button className="btn-ghost px-1.5 py-0 text-xs" disabled={busy} onClick={() => act(() => api(`/mock-aud/_admin/rfqs/${r.number}`, { method: 'PATCH', body: { spec_revision: r.spec_revision + 1 } }))}>＋1</button>
+              </span>
+              <label className="inline-flex items-center gap-1 text-xs text-stone-600">
+                <input type="checkbox" checked={!!r.is_test} disabled={busy} onChange={(e) => act(() => api(`/mock-aud/_admin/rfqs/${r.number}`, { method: 'PATCH', body: { is_test: e.target.checked } }))} />測試單
+              </label>
               <select
                 className="input ml-auto w-auto py-1 text-xs"
                 value={r.send_pending ? 'send_pending' : r.snapshot ? r.status : 'no_snapshot'}

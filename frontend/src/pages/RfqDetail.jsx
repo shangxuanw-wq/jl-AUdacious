@@ -32,12 +32,17 @@ export default function RfqDetail({ cfg }) {
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className="font-mono text-xl font-bold">{rfq.rfq_number}</h1>
           <Badge map={RFQ_STATUS} value={rfq.status} />
+          <span className="rounded-md bg-sky-50 px-2 py-0.5 text-xs text-sky-700 ring-1 ring-sky-200">規格版次 {rfq.spec_revision}</span>
+          {rfq.is_test && <span className="rounded-md bg-violet-50 px-2 py-0.5 text-xs text-violet-700 ring-1 ring-violet-200">測試單</span>}
           {!data.in_mock && cfg && !cfg.target_is_partner_prod && (
             <span className="text-xs text-amber-700">假澳得仕沒有這張詢價單，送出會回 404</span>
           )}
         </div>
       </div>
 
+      {quotes.length > 0 && quotes.every((q) => (q.rfq_revision || 0) < rfq.spec_revision) && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">規格已改到第 {rfq.spec_revision} 版，現有報價都是舊版規格，請照新版重新報價。</p>
+      )}
       <section className="card grid gap-4 p-5 sm:grid-cols-4">
         <Field label="品名" value={rfq.item_name} wide />
         <Field label="材質" value={rfq.material_text} />

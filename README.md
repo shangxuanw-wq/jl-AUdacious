@@ -1,6 +1,6 @@
 # jl-AUdacious：JL × 澳得仕 估價模組
 
-兆臨接澳得仕（AUdacious 3D 工作室）的詢價，建立報價，依契約 `2026-10-29.4` 用 API 送出報價。
+兆臨接澳得仕（AUdacious 3D 工作室）的詢價，建立報價，依契約 `2026-10-29.5` 用 API 送出報價，並在原詢價信串回信附報價單 PDF。
 全部跑在雲端：**Vercel**（前端＋API＋Queues）＋ **Supabase**（`jl-rfq-dev`，資料表在 `rfq`、`mock_partner` schema）。
 
 ## 架構
@@ -17,7 +17,7 @@
 ```
 
 - 送出：`POST /api/quotes/{id}/send` 建立送出紀錄（凍結 payload 與 event_id），當場送第 1 次。
-- 重送：可重送的錯誤（5xx、逾時、429、409 event_in_flight／send_pending）間隔 60／300／1800／1800 秒，總共最多 5 次。
+- 重送（契約 .5 第 4.7 節）：逾時、5xx（503 disabled 除外）、429、409 event_in_flight／send_pending 才重送；間隔 2、5、15 秒（送出當下就地重試），之後 1、5、30 分鐘（背景），總共最多 7 次後轉人工；有 `Retry-After` 就至少等那麼久。
   狀態以資料庫為準（`next_attempt_at`），由三條路觸發，誰先到都一樣：
   1. Vercel Queues 延遲訊息（topic `quote-dispatch`，推送由 `main.py` 中介層交給 SDK）
   2. 人員介面開著送出中的報價時，每 5 秒呼叫 `POST /api/dispatches/sweep`
@@ -38,14 +38,21 @@
 | `backend/rfq_app/mock_aud/` | 假澳得仕（行為對照澳得仕原始碼） |
 | `backend/sql/` | 資料表 migration（已套用到 Supabase） |
 | `backend/rfq_app/selftest.py` | 雲端自我測試（只送假澳得仕） |
-| `backend/tests/` | 48 項測試（本機 PostgreSQL 16） |
+| `backend/tests/` | 60 項測試（本機 PostgreSQL 16） |
 | `frontend/` | 人員介面 |
+
+## 報價單 PDF 與回信
+
+- `rfq_app/quote_pdf/`：報價單 PDF（fpdf2＋內嵌 Noto Sans TC 子集），數字跟 JSON 用同一個函式算；印詢價編號、規格版次、報價單號與修訂、單價、數量、合計、稅別、交期與起算點、有效期。
+- `rfq_app/mail/reply.py`：送出報價時在原信串回覆（`In-Reply-To`／`References`／`threadId`），附 PDF。
+- `RFQ_MAIL_REPLY`：`live`（寄承辦人 Reply-To）／`self`（只寄給自己）／`off`；沒設時，送出目標是澳得仕正式站才 `live`，其他一律 `self`。
+- 手動建立（沒有原信）的詢價單不寄回信。
 
 ## 收詢價信
 
 - 「信箱」頁按「連接」→ 用 `RFQ_MAILBOX`（預設 jl-jimmy@jauhlirn.com）授權 Google（`gmail.modify`）。refresh token 用 `MAIL_TOKEN_KEY` 加密存在 `rfq.mailboxes`。
 - 每分鐘的 `/api/cron/sweep` 會順便收信：`subject:AUD-RFQ -from:me newer_than:30d`，用 `rfq.inbound_messages` 記住處理過哪些信，不改信箱內容。
-- 解析照契約 3.2（`rfq_app/mail/parser.py`）；同一詢價編號再寄 → 更新同一張單、以最新一封為準；已結案不動。
+- 解析照契約 3.2（`rfq_app/mail/parser.py`），含「規格版次」與主旨的「[測試]」。同一詢價編號再寄：同版次＝不動規格（不用重報）；版次變大＝更新規格、提示重新報價；版次較舊＝略過；已結案不動。
 - 附件不另存，下載時即時向 Gmail 取（要登入）。
 - `RFQ_SENDER_ALLOW`：只收這些寄件人（信箱或 `@網域`，逗號分隔）；空的 = 不限制。
 

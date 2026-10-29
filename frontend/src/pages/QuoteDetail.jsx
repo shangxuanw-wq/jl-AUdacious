@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, dt, money } from '../api.js'
-import { Badge, DISPATCH_STATUS, QUOTE_STATUS, issueText } from '../labels.jsx'
+import { Badge, DISPATCH_STATUS, MAIL_STATUS, QUOTE_STATUS, issueText } from '../labels.jsx'
 import QuoteForm from './QuoteForm.jsx'
 
 const ACTIVE = new Set(['pending', 'sending', 'retry_wait'])
@@ -35,7 +35,8 @@ export default function QuoteDetail({ cfg }) {
 
   const doSend = async () => {
     const target = cfg?.target_is_partner_prod ? '澳得仕正式站' : '假澳得仕'
-    if (!window.confirm(`確定送出 ${q.quote_no} r${q.quote_revision} 到「${target}」？`)) return
+    const mailTo = !q.has_source_mail ? '（手動建立的詢價單沒有原信，不寄回信）' : q.reply_mode === 'live' ? `，並回信附 PDF 給承辦人 ${q.rfq.reply_to}` : q.reply_mode === 'self' ? '，回信附 PDF 只寄給我方信箱（開發期）' : '（回信已關閉）'
+    if (!window.confirm(`確定送出 ${q.quote_no} r${q.quote_revision} 到「${target}」${mailTo}？`)) return
     setBusy(true)
     setError('')
     try {
@@ -52,6 +53,20 @@ export default function QuoteDetail({ cfg }) {
     setBusy(true)
     try {
       await api(`/dispatches/${did}/requeue`, { method: 'POST' })
+      await load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resendMail = async () => {
+    if (!window.confirm(q.reply_mode === 'live' ? `重寄回信（附 PDF）給 ${q.rfq.reply_to}？` : '重寄回信（附 PDF）？')) return
+    setBusy(true)
+    try {
+      const r = await api(`/quotes/${id}/mail`, { method: 'POST' })
+      if (r.status === 'skipped') setError(`沒有寄：${r.reason}`)
       await load()
     } catch (e) {
       setError(e.message)
@@ -78,7 +93,9 @@ export default function QuoteDetail({ cfg }) {
           <h1 className="font-mono text-xl font-bold">{q.quote_no}</h1>
           <span className="rounded-md bg-stone-200 px-2 py-0.5 font-mono text-xs">r{q.quote_revision}</span>
           <Badge map={QUOTE_STATUS} value={q.status} />
+          <span className="rounded-md bg-sky-50 px-2 py-0.5 text-xs text-sky-700 ring-1 ring-sky-200">規格版次 {q.rfq_revision ?? '—'}</span>
           <div className="ml-auto flex flex-wrap gap-2">
+            <a className="btn-ghost" href={`/api/quotes/${id}/pdf`} target="_blank" rel="noreferrer">報價單 PDF</a>
             {q.status === 'draft' && mode === null && <button className="btn-ghost" onClick={() => setMode('edit')}>修改草稿</button>}
             {['draft', 'failed'].includes(q.status) && mode === null && (
               <button className="btn-primary" onClick={doSend} disabled={busy || !q.payload_preview}>{busy ? '送出中…' : '送出報價'}</button>
@@ -131,6 +148,28 @@ export default function QuoteDetail({ cfg }) {
         </section>
       )}
 
+      {q.status !== 'draft' && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold">回信（附報價單 PDF）</h2>
+            {q.has_source_mail && q.reply_mode !== 'off' && (
+              <button className="btn-ghost px-2.5 py-1 text-xs" onClick={resendMail} disabled={busy}>重寄回信</button>
+            )}
+          </div>
+          {!q.has_source_mail && <p className="text-sm text-stone-500">這張詢價單是手動建立的，沒有原信可以回覆。</p>}
+          {q.has_source_mail && q.mails.length === 0 && <p className="text-sm text-stone-500">還沒寄。</p>}
+          {q.mails.map((m) => (
+            <div key={m.id} className="card flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+              <Badge map={MAIL_STATUS} value={m.status} />
+              <span className="text-xs text-stone-500">{m.mode === 'self' ? '只寄給自己（開發期）' : '寄給承辦人'}</span>
+              <span className="font-mono text-xs">{m.to_addr}</span>
+              <span className="text-xs text-stone-500">{dt(m.sent_at || m.created_at)}</span>
+              {m.error && <span className="text-xs text-red-700">{m.error}</span>}
+            </div>
+          ))}
+        </section>
+      )}
+
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-bold">送出紀錄</h2>
@@ -147,7 +186,7 @@ export default function QuoteDetail({ cfg }) {
             <div className="flex flex-wrap items-center gap-3">
               <Badge map={DISPATCH_STATUS} value={d.status} />
               <span className="font-mono text-xs text-stone-500">{d.event_id}</span>
-              <span className="text-xs text-stone-500">嘗試 {d.attempt_count}／5</span>
+              <span className="text-xs text-stone-500">嘗試 {d.attempt_count}／7</span>
               {d.status === 'retry_wait' && <span className="text-xs text-amber-700">下次：{dt(d.next_attempt_at)}</span>}
               {ACTIVE.has(d.status) && (
                 <button className="btn-ghost ml-auto px-2.5 py-1 text-xs" onClick={() => requeue(d.id)} disabled={busy}>立即重送</button>

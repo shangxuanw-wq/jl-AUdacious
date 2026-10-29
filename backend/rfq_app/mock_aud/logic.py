@@ -100,7 +100,7 @@ def id_text(raw: Any, max_len: int) -> tuple[str | None, bool]:
     if not isinstance(raw, str):
         return None, True
     t = js_trim(re.sub(r"[\r\n]+", " ", raw))
-    return (t[:max_len] if t else None), False
+    return (t if t else None), False
 
 
 class PayloadError(Exception):
@@ -283,6 +283,13 @@ def parse_quote(body: dict, expect: dict, today: str) -> dict:
     if lead_basis == "unknown":
         info("lead_basis_unknown", "lead_basis", "沒說交期從哪一天起算；畫面會寫「起算條件待確認」")
 
+    def too_long(field, t, max_len):
+        # 契約 .5：超長整筆拒收，不截斷
+        if t is not None and len(t) > max_len:
+            err("too_long", field, f"{field} 超過 {max_len} 字（{len(t)} 字）")
+            return True
+        return False
+
     def text_field(field, raw, max_len):
         if raw is not None and not isinstance(raw, str):
             err("invalid_field", field, f"{field} 要是字串", got=raw)
@@ -290,12 +297,14 @@ def parse_quote(body: dict, expect: dict, today: str) -> dict:
         if raw is None:
             return None
         t = js_trim(re.sub(r"[\r\n]+", " ", raw))
-        return t[:max_len] if t else None
+        too_long(field, t, max_len)
+        return t or None
 
     def id_field(field, raw, max_len):
         v, invalid = id_text(raw, max_len)
         if invalid:
             err("invalid_field", field, f"{field} 要是字串或整數", got=raw)
+        too_long(field, v, max_len)
         return v
 
     vendor_name = text_field("vendor", pick(o, "vendor", "vendor_name", "supplier")[1], 80) or "兆臨"
@@ -305,7 +314,16 @@ def parse_quote(body: dict, expect: dict, today: str) -> dict:
     note_raw = pick(o, "note", "notes", "remarks")[1]
     if note_raw is not None and not isinstance(note_raw, str):
         err("invalid_field", "note", "note 要是字串", got=note_raw)
-    note = js_trim(re.sub(r"\r\n?", "\n", note_raw))[:1000] if isinstance(note_raw, str) else ""
+    note = js_trim(re.sub(r"\r\n?", "\n", note_raw)) if isinstance(note_raw, str) else ""
+    too_long("note", note, 1000)
+
+    rfq_rev_raw = o.get("rfq_revision")
+    rfq_revision = None
+    if rfq_rev_raw is not None:
+        if isinstance(rfq_rev_raw, bool) or not isinstance(rfq_rev_raw, (int, float)) or (isinstance(rfq_rev_raw, float) and not rfq_rev_raw.is_integer()) or rfq_rev_raw < 1:
+            err("invalid_integer", "rfq_revision", "rfq_revision 要是正整數（JSON 數字）", got=rfq_rev_raw)
+        else:
+            rfq_revision = int(rfq_rev_raw)
     part_text = text_field("items[0].part", item.get("part"), 120)
     mat_text = text_field("items[0].material", item.get("material"), 120)
 
@@ -375,10 +393,10 @@ def parse_quote(body: dict, expect: dict, today: str) -> dict:
         "valid_until": valid,
         "note": note,
     }
-    return {"quote": quote, "issues": issues, "event_id": event_id, "quote_revision": quote_revision}
+    return {"quote": quote, "issues": issues, "event_id": event_id, "quote_revision": quote_revision, "rfq_revision": rfq_revision}
 
 
-TERM_KEYS = ["currency", "unit_price", "quantity", "unit", "line_total", "adjustment", "total", "tax", "tax_included", "lead_days", "lead_basis", "promised_date", "valid_until", "quote_date"]
+TERM_KEYS = ["quote_no", "note", "currency", "unit_price", "quantity", "unit", "line_total", "adjustment", "total", "tax", "tax_included", "lead_days", "lead_basis", "promised_date", "valid_until", "quote_date"]
 
 
 def same_terms(a: dict, b: dict) -> bool:

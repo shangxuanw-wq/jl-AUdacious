@@ -17,6 +17,7 @@ os.environ.update(
         "AUD_QUOTE_API_URL": BASE + "/api/mock-aud/api/rfq/quotes",
         "APP_BASE_URL": BASE,
         "SESSION_SECRET": "test-session-secret",
+        "RFQ_INLINE_RETRY_SECONDS": "0",
     }
 )
 os.environ.pop("VERCEL", None)

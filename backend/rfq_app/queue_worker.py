@@ -12,6 +12,7 @@ next_attempt_at 決定要不要真的送：
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import timedelta
@@ -86,13 +87,18 @@ async def _schedule(dispatch_id: int, delay: float, key: str) -> bool:
 
 
 async def enqueue(dispatch_id: int, key: str = "send") -> str:
-    """就地處理一次；需要重送就排一則延遲訊息。回傳這次處理的結果狀態。
+    """就地處理；短間隔（2、5、15 秒）的重送也在這裡等，超過預算才交給背景。回傳最後的結果狀態。
 
     key 用來防止同一個動作重複排入（例如按了兩次送出）；手動重新排入要給不同的 key。
     """
+    budget = config.settings.inline_retry_seconds
+    t0 = time.monotonic()
     result = await dispatcher.process_dispatch(dispatch_id)
+    while result.retry_in is not None and result.retry_in <= 15 and (time.monotonic() - t0) + result.retry_in <= budget:
+        await asyncio.sleep(result.retry_in)
+        result = await dispatcher.process_dispatch(dispatch_id)
     if result.retry_in is not None:
-        await _schedule(dispatch_id, result.retry_in, f"{key}-{result.state}")
+        await _schedule(dispatch_id, result.retry_in, f"{key}-{result.state}-{int(time.time())}")
     return result.state
 
 
@@ -104,7 +110,7 @@ async def sweep(limit: int = 20) -> list[dict]:
             await conn.execute(
                 text(
                     "SELECT id FROM rfq.quote_dispatches WHERE "
-                    "(status IN ('pending','retry_wait') AND next_attempt_at <= now() + interval '2 seconds') "
+                    "(status IN ('pending','retry_wait') AND next_attempt_at <= now()) "
                     "OR (status = 'sending' AND sending_started_at < now() - make_interval(secs => :stale)) "
                     "ORDER BY next_attempt_at LIMIT :lim"
                 ),

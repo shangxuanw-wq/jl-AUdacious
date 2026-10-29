@@ -1,0 +1,210 @@
+{
+  "contract_version": "2026-10-29.5",
+  "status": "澳得仕的候選契約，尚未與貴公司聯測；以人工審核發布為前提（自動發布關閉）",
+  "endpoint": "https://audacious-3d-studio.vercel.app/api/rfq/quotes",
+  "method": "POST",
+  "enabled": true,
+  "writes_enabled": true,
+  "auth": "Authorization: Bearer <token>（token 由澳得仕另行提供；只走 HTTPS）",
+  "content_type": "application/json（必填；實際內容 64 KB 以內）",
+  "one_item_per_rfq": true,
+  "receive_then_publish": "收到的報價先進澳得仕審核（202 pending_review）；人員核對 JSON 與報價單 PDF 一致後才給學生看",
+  "identifiers": {
+    "rfq": "我方的詢價單身分（AUD-RFQ-2026-0001）。信件主旨與「詢價編號：」那一行",
+    "rfq_revision": "我方的規格版次（正整數）。信件「規格版次：」那一行；規格（品名、數量、材質、圖面、設計…）改了才會變，同一份規格重寄不變，跟寄信次數無關。請帶回：沒帶時只有一版可能寄達才自動對應，否則等我方人工指定，不會預設成最新版",
+    "quote_no": "貴公司的報價單號（跟 PDF 上的一樣）",
+    "quote_revision": "貴公司對「同一版規格」的報價修訂（1、2…，或同前綴的尾數）。改了價格、數量、稅、交期、有效期、報價單號或備註裡的條件，都要加 1；同一修訂內容不同會被標成 revision_reused 待審，不會覆蓋",
+    "event_id": "一次送出的冪等鍵（120 字以內，在貴公司系統內唯一、跨詢價單也不重用）。逾時重送沿用同一個 event_id 與一模一樣的內容；同一個 event_id 只能對應一份內容。可以放 body 或 X-Event-Id 標頭（兩邊都給要一樣）",
+    "candidate_id": "我方收下之後給的候選身分；收到不等於已發布"
+  },
+  "amounts": {
+    "items[].unit_price × items[].qty": "原始小計（我方用「分」計算，金額最多兩位小數）",
+    "items[].subtotal": "應等於 單價 × 數量；不同時（折扣、另計費用、誤植）收下待審，原值照存，由澳得仕人員選定核定的金額並寫原因",
+    "total": "這張報價的合計；未稅，除非 tax_included=true。運費、模具費等另計費用若算在 total 裡，請在 note 寫明項目與金額；total 跟 subtotal 不同時不會自動採用任何一個，一律待人工核定",
+    "tax": "營業稅金額；tax_included=false 時含稅總額＝total＋tax",
+    "tax_included": "total 是否已含稅；沒給就是「稅別待確認」"
+  },
+  "pdf": "正式報價以報價單 PDF 為準：請回覆詢價信（保留主旨）並附 PDF，PDF 上寫詢價編號、規格版次、報價單號與修訂、單價、數量、合計、稅別、交期與起算點、有效期。JSON 的 rfq、rfq_revision、quote_no、quote_revision 與數字要跟 PDF 相同；澳得仕人員核對兩者一致才發布（沒有 PDF 只能由澳得仕寫明例外原因才發布）",
+  "limits": {
+    "body_bytes": 65536,
+    "event_id": 120,
+    "quote_no": 60,
+    "quote_revision": 60,
+    "vendor": 80,
+    "part": 120,
+    "material": 120,
+    "note": 1000,
+    "money_decimals": 2,
+    "dates": "YYYY-MM-DD，要是存在的日期（Asia/Taipei 的曆日）",
+    "lead_days": "0–365 個工作天，起算看 lead_basis"
+  },
+  "optional_headers": {
+    "X-Event-Id": "等同 body 的 event_id；兩邊都給時要一樣，不一樣回 400",
+    "X-Request-Id": "80 字以內的英數與 . _ : - / + = @；回應會帶同一個值，方便對帳（不合格式的改用我方產生的）",
+    "X-Self-Test": "1＝對接自我測試；只能打澳得仕的測試單，寫入的資料標成測試、永遠不會發布給學生"
+  },
+  "fields": [
+    {
+      "field": "rfq",
+      "required": true,
+      "meaning": "我方的詢價單身分：詢價編號，完整原樣帶回（含 AUD- 前綴），例如 AUD-RFQ-2026-0001（信件「詢價編號：」那一行與主旨）"
+    },
+    {
+      "field": "rfq_revision",
+      "required": false,
+      "meaning": "我方的規格版次（JSON 正整數；信件「規格版次：」那一行）。這份報價是照第幾版規格報的。規格改了我方會寄新版次；同規格重寄版次不變。沒帶時：只有一版可能寄達（我方紀錄為寄出成功、寄送中或結果不明的）才自動對應，否則待我方人工指定，不會預設成最新版【建議欄位，未定案】"
+    },
+    {
+      "field": "items[]",
+      "required": true,
+      "meaning": "逐件報價。目前一張詢價單只有 1 個工件，items 必須剛好 1 筆；多筆會整筆拒絕"
+    },
+    {
+      "field": "items[].qty",
+      "required": true,
+      "meaning": "數量（JSON 整數 1–100000）"
+    },
+    {
+      "field": "items[].unit_price",
+      "required": true,
+      "meaning": "單價（JSON 數字，大於 0，最多兩位小數，不含貨幣符號；幣別看 currency）"
+    },
+    {
+      "field": "items[].lead_days",
+      "required": true,
+      "meaning": "交期（工作天，JSON 整數 0–365）；起算點看 lead_basis"
+    },
+    {
+      "field": "items[].subtotal",
+      "required": false,
+      "meaning": "小計（JSON 數字，最多兩位小數）。應等於 單價 × 數量；不同時（折扣、額外費用）收下但待我方核定，原值照存"
+    },
+    {
+      "field": "items[].unit",
+      "required": false,
+      "meaning": "pcs（件）或 sets（套），預設 pcs"
+    },
+    {
+      "field": "items[].part",
+      "required": false,
+      "meaning": "品名（字串，120 字以內）：詢價信「工件1｜品名｜材質｜數量」的品名，原樣帶回；不同時待確認"
+    },
+    {
+      "field": "items[].material",
+      "required": false,
+      "meaning": "材質（字串，120 字以內）：同一行的材質，原樣帶回；不同時待確認"
+    },
+    {
+      "field": "total",
+      "required": false,
+      "meaning": "合計（JSON 數字，最多兩位小數）。只有一個工件時應等於小計；是否含稅看 tax_included。跟小計或 單價 × 數量 對不上時收下待核定，原值照存，不會被換掉"
+    },
+    {
+      "field": "tax",
+      "required": false,
+      "meaning": "營業稅金額（JSON 數字，最多兩位小數）"
+    },
+    {
+      "field": "tax_included",
+      "required": false,
+      "meaning": "total 是否已含稅（JSON 布林 true／false）；沒給就待確認"
+    },
+    {
+      "field": "currency",
+      "required": false,
+      "meaning": "幣別三碼，預設 TWD"
+    },
+    {
+      "field": "quote_no",
+      "required": false,
+      "meaning": "貴公司的報價單號（字串或整數，60 字以內）"
+    },
+    {
+      "field": "quote_revision",
+      "required": false,
+      "meaning": "貴公司對同一版規格的報價修訂（字串或整數，60 字以內，例如 1、2）。數字或同前綴尾數可比；比已發布的舊、比不出新舊、或同一版次換了數字或條件（含備註），都收下待審，不會覆蓋【建議欄位，未定案】"
+    },
+    {
+      "field": "event_id",
+      "required": false,
+      "meaning": "這一次送出的冪等鍵（字串或整數，120 字以內）。逾時重送沿用同一個 event_id 與同一份內容；同 ID 不同內容回 409 event_conflict。也可以放在 X-Event-Id 標頭（兩邊都給要一樣）【建議欄位，未定案】"
+    },
+    {
+      "field": "quote_date",
+      "required": false,
+      "meaning": "報價日期 YYYY-MM-DD（存在的日期）；沒給時學生頁只寫我方接收日期"
+    },
+    {
+      "field": "valid_until",
+      "required": false,
+      "meaning": "報價有效期 YYYY-MM-DD（含當天）；已過期收下待審"
+    },
+    {
+      "field": "delivery_date",
+      "required": false,
+      "meaning": "承諾交貨日 YYYY-MM-DD（沒有就只看 lead_days）"
+    },
+    {
+      "field": "lead_basis",
+      "required": false,
+      "meaning": "交期起算：po（自收到 PO 起算）或 quote（自報價日起算）；沒給就寫「起算條件待確認」"
+    },
+    {
+      "field": "vendor",
+      "required": false,
+      "meaning": "貴公司名稱（字串，80 字以內），預設「兆臨」"
+    },
+    {
+      "field": "note",
+      "required": false,
+      "meaning": "備註（字串，1000 字以內，超過整筆拒收，不截斷）；發布後學生看得到。影響價格、交期或範圍的條件（例如不含運費）請寫在這裡，改了也要加 quote_revision"
+    }
+  ],
+  "example": {
+    "rfq": "AUD-RFQ-2026-0001",
+    "rfq_revision": 1,
+    "event_id": "evt-20261029-0001",
+    "quote_no": "QT-2026-0315",
+    "quote_revision": 1,
+    "quote_date": "2026-10-30",
+    "valid_until": "2026-11-27",
+    "currency": "TWD",
+    "tax_included": false,
+    "lead_basis": "po",
+    "items": [
+      {
+        "part": "工件 AUD-RFQ-2026-0001-1",
+        "material": "PLA",
+        "qty": 1,
+        "unit": "pcs",
+        "unit_price": 350,
+        "subtotal": 350,
+        "lead_days": 10
+      }
+    ],
+    "total": 350,
+    "tax": 18
+  },
+  "responses": {
+    "400": "欄位缺漏、型別或格式不對、超過長度（too_long，不會截斷）、標頭與 body 的 event_id 不一致：{ error, issues[] }（每一筆有 code、field、原因）；不是合法 JSON、不是 HTTPS、讀不到內容時只有 { error }。整筆不收；修正資料後用新的 event_id 再送，不要原樣重試",
+    "401": "token 不對或沒帶；不寫入。修正憑證，不要重試",
+    "404": "找不到這個詢價編號；不要重試，先跟澳得仕確認",
+    "413": "內容超過 64 KB（看實際位元組，不只看 Content-Length）；精簡內容（長說明放在報價單 PDF）",
+    "415": "Content-Type 不是 application/json；修正傳輸設定",
+    "429": "太頻繁（每個執行個體每分鐘 30 次；帶 Retry-After: 60）。同一個 event_id、同一份內容，等 Retry-After 之後重送",
+    "202 pending_review": "已收存成候選、待澳得仕審核：{ ok, outcome:\"pending_review\", rfq, candidate_id, candidate_revision, spec_revision, issues[] }。停止重送；收到不等於已發布給學生",
+    "200 duplicate": "同一個事件（同 event_id 同內容）或同內容重送：{ ok, outcome:\"duplicate\", candidate_id, candidate_revision, status }。核對 candidate_id，停止重送",
+    "200 published": "只有澳得仕開啟自動發布、而且完全沒有待確認事項時才會出現；目前關閉，不會出現",
+    "409 event_conflict": "同一個 event_id 之前對應的是不同內容（或另一張詢價單）。停止重送並查明；真正的新報價用新的 event_id，並把 quote_revision 加 1",
+    "409 event_in_flight": "同一個 event_id 正在處理（Retry-After: 5 秒）。等 Retry-After 之後用同一個 event_id、同一份內容重送；不要換成新的 event_id 繞過",
+    "409 send_pending": "我方的寄送結果還在確認中（Retry-After: 300 秒）。同一個 event_id、同一份內容有限次數重送（建議每 5 分鐘一次、最多 6 次；建議值，待雙方確認），還是 409 就通知澳得仕人工處理；結果不明可能不會自己恢復",
+    "409 rfq_revision_unknown": "rfq_revision 不是我方寄出過的規格版次；停止自動重試，核對信件上的「規格版次」",
+    "409 closed／status／no_snapshot": "詢價單已結案、還沒寄出或沒有寄出紀錄；停止自動重試，請澳得仕確認流程狀態，不要換 ID 再送",
+    "409 not_test_rfq": "帶了 X-Self-Test，但這張不是測試單；自我測試只能打測試單",
+    "503 maintenance": "澳得仕暫停寫入維修中（Retry-After: 600 秒）。等 Retry-After 之後用同一個 event_id、同一份內容重送",
+    "503 disabled": "這個端點還沒啟用（沒設定 token）；不要重試，改人工聯絡",
+    "5xx／逾時／連線中斷": "同一個 event_id、同一份內容重送，退避加抖動（建議 2、5、15、30、60 秒後，再轉人工；建議值，待雙方確認）",
+    "每個 POST 回應": "都帶 request_id（跟 X-Request-Id 標頭一樣）與 contract_version；對帳請給 request_id。被拒收（4xx）的請求我方不保存內容，請連同您送出的 JSON 一起給我們"
+  },
+  "note": "這份契約是澳得仕的候選版本，尚未與貴公司聯測。"
+}

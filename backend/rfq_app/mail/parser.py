@@ -1,4 +1,4 @@
-"""解析澳得仕詢價信（契約 2026-10-29.4 第 3.2 節）。純函式，不碰網路與資料庫。
+"""解析澳得仕詢價信（契約 2026-10-29.5 第 3.2 節）。純函式，不碰網路與資料庫。
 
 - 只讀分隔線「--- 規格與備註…---」之前、以行首關鍵字（全形「：」）開頭的固定欄位。
 - 分隔線之後是給人看的自由文字，原樣保留（去掉每行開頭的全形空白）。
@@ -29,6 +29,8 @@ class ParseError(ValueError):
 @dataclass
 class ParsedRfq:
     rfq_number: str
+    spec_revision: int | None
+    is_test: bool
     project_name: str | None
     need_date: date | None
     need_date_text: str | None
@@ -74,6 +76,15 @@ def parse_rfq_mail(subject: str, body: str) -> ParsedRfq:
     if subj_nums and number not in subj_nums:
         warnings.append("subject_rfq_mismatch")
 
+    spec_text_raw = _field(head, "規格版次：")
+    spec_rev: int | None = None
+    if spec_text_raw is None:
+        warnings.append("spec_revision_missing")
+    elif re.fullmatch(r"[1-9]\d{0,5}", spec_text_raw):
+        spec_rev = int(spec_text_raw)
+    else:
+        raise ParseError("bad_spec_revision", spec_text_raw)
+
     item_line = next((ln for ln in head if ln.startswith("工件1｜")), None)
     if not item_line:
         raise ParseError("missing_item", "找不到「工件1｜」")
@@ -113,6 +124,8 @@ def parse_rfq_mail(subject: str, body: str) -> ParsedRfq:
 
     return ParsedRfq(
         rfq_number=number,
+        spec_revision=spec_rev,
+        is_test="[測試]" in (subject or ""),
         project_name=_field(head, "專案："),
         need_date=need,
         need_date_text=need_text,

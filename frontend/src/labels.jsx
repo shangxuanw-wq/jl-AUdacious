@@ -23,7 +23,7 @@ export const DISPATCH_STATUS = {
   rejected: ['被拒收', 'bg-red-50 text-red-700 ring-red-200'],
   not_found: ['對方找不到詢價編號', 'bg-red-50 text-red-700 ring-red-200'],
   conflict: ['狀態衝突', 'bg-red-50 text-red-700 ring-red-200'],
-  gave_up: ['已放棄（重送 5 次）', 'bg-red-50 text-red-700 ring-red-200'],
+  gave_up: ['已放棄（共試 7 次，轉人工）', 'bg-red-50 text-red-700 ring-red-200'],
   blocked: ['已擋下（正式站）', 'bg-red-50 text-red-700 ring-red-200'],
 }
 
@@ -58,6 +58,21 @@ export const ISSUE_TEXT = {
   not_found: '對方找不到詢價編號',
   invalid_number: '數字格式錯',
   rfq_invalid: '詢價編號格式錯',
+  too_long: '欄位太長（對方整筆拒收）',
+  rfq_revision_unknown: '規格版次不是對方寄出過的',
+  not_test_rfq: '不是測試單（自我測試只能打測試單）',
+  spec_unbound: '沒帶規格版次，對方要人工指定',
+  spec_outdated: '報價對應的規格版次比目前舊',
+  endpoint_disabled: '對方端點還沒啟用（503 disabled，不重送）',
+  maintenance: '對方維修中（503，稍後重送）',
+  invalid_integer: '整數格式錯',
+  event_id_mismatch: '標頭與內容的 event_id 不一致',
+}
+
+export const MAIL_STATUS = {
+  pending: ['寄送中', 'bg-amber-50 text-amber-700 ring-amber-200'],
+  sent: ['已寄出', 'bg-emerald-50 text-emerald-700 ring-emerald-200'],
+  failed: ['寄送失敗', 'bg-red-50 text-red-700 ring-red-200'],
 }
 
 export const issueText = (code) => ISSUE_TEXT[code] || code

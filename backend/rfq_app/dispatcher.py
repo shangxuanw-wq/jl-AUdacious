@@ -1,9 +1,10 @@
-"""送出報價：一次嘗試＝領取→發 HTTP→寫結果。重送間隔與上限照澳得仕契約 4.6。
+"""送出報價：一次嘗試＝領取→發 HTTP→寫結果。重送照澳得仕契約 2026-10-29.5 第 4.7 節。
 
 - 同一筆送出紀錄（dispatch）永遠用同一個 event_id、同一份 payload_text。
-- 可重送：5xx、逾時／連線錯誤、429（至少 60 秒）、409 event_in_flight、409 send_pending。
-- 其他 4xx 不重送。
-- 總共最多 5 次嘗試；第 1～4 次失敗後分別等 60／300／1800／1800 秒。
+- 可重送：逾時／連線錯誤、5xx（503 disabled 除外）、429、409 event_in_flight、409 send_pending。
+- 其他 4xx（含 409 closed／status／no_snapshot／rfq_revision_unknown／event_conflict／not_test_rfq）不重送。
+- 間隔：2、5、15 秒（送出當下就地重試），之後 1、5、30 分鐘（背景每分鐘掃描）；總共最多 7 次，之後轉人工。
+- 有 Retry-After 就至少等那麼久；沒帶時 429＝60 秒、event_in_flight＝5 秒、send_pending＝300 秒、503 maintenance＝600 秒。
 """
 
 from __future__ import annotations
@@ -22,9 +23,10 @@ from . import config, db
 log = logging.getLogger("rfq.dispatcher")
 
 INTERNAL_MOCK = "internal-mock"  # AUD_QUOTE_API_URL 設成這個值 → 送到本 app 內的假澳得仕
-RETRY_DELAYS = [60, 300, 1800, 1800]
-MAX_ATTEMPTS = 5
+RETRY_DELAYS = [2, 5, 15, 60, 300, 1800]
+MAX_ATTEMPTS = 7
 RETRYABLE_409 = {"event_in_flight", "send_pending"}
+DEFAULT_WAIT = {"rate_limited": 60, "event_in_flight": 5, "send_pending": 300, "maintenance": 600}
 TERMINAL = {"accepted", "duplicate", "published", "rejected", "not_found", "conflict", "gave_up", "blocked"}
 SUCCESS = {"accepted", "duplicate", "published"}
 
@@ -44,11 +46,21 @@ class Classified:
     min_delay: int = 0
 
 
-def classify(http_status: int | None, body: Any, exc: str | None) -> Classified:
+def _retry_after(headers: Any) -> int:
+    try:
+        v = int(str((headers or {}).get("retry-after", "")).strip())
+        return max(0, min(v, 3600))
+    except ValueError:
+        return 0
+
+
+def classify(http_status: int | None, body: Any, exc: str | None, headers: Any = None) -> Classified:
     if exc is not None:
         return Classified("retry_wait", True, exc)
     assert http_status is not None
     b = body if isinstance(body, dict) else {}
+    ra = _retry_after(headers)
+    code = str(b.get("code") or "")
     if http_status == 202:
         return Classified("accepted", False, None)
     if http_status == 200:
@@ -58,14 +70,17 @@ def classify(http_status: int | None, body: Any, exc: str | None) -> Classified:
         if outcome == "duplicate":
             return Classified("duplicate", False, None)
         return Classified("rejected", False, "unexpected_200")
+    if http_status == 503 and code == "disabled":
+        return Classified("rejected", False, "endpoint_disabled")
     if http_status >= 500:
-        return Classified("retry_wait", True, f"http_{http_status}")
+        key = "maintenance" if code == "maintenance" else None
+        return Classified("retry_wait", True, key or f"http_{http_status}", min_delay=max(ra, DEFAULT_WAIT.get(key or "", 0)))
     if http_status == 429:
-        return Classified("retry_wait", True, "rate_limited", min_delay=60)
+        return Classified("retry_wait", True, "rate_limited", min_delay=max(ra, DEFAULT_WAIT["rate_limited"]))
     if http_status == 409:
-        code = str(b.get("code") or "conflict")
+        code = code or "conflict"
         if code in RETRYABLE_409:
-            return Classified("retry_wait", True, code)
+            return Classified("retry_wait", True, code, min_delay=max(ra, DEFAULT_WAIT[code]))
         return Classified("conflict", False, code)
     if http_status == 404:
         return Classified("not_found", False, "not_found")
@@ -124,7 +139,7 @@ async def process_dispatch(dispatch_id: int, now: datetime | None = None) -> Pro
                 return ProcessResult("in_progress", max(5.0, s.sending_stale_seconds - age))
             # 卡住的（例如函式中途被終止）：視為那次逾時，照常重送同一個 event_id
             log.warning("dispatch %s stale sending (%.0fs)", dispatch_id, age)
-        elif row["next_attempt_at"] > now + timedelta(seconds=2):
+        elif row["next_attempt_at"] > now + timedelta(seconds=0.5):
             return ProcessResult("not_due", (row["next_attempt_at"] - now).total_seconds())
 
         if row["attempt_count"] >= MAX_ATTEMPTS:
@@ -150,6 +165,7 @@ async def process_dispatch(dispatch_id: int, now: datetime | None = None) -> Pro
     started = utcnow()
     http_status: int | None = None
     resp_body: Any = None
+    resp_headers: Any = None
     resp_text: str | None = None
     exc_code: str | None = None
     if not s.aud_quote_api_token:
@@ -174,6 +190,7 @@ async def process_dispatch(dispatch_id: int, now: datetime | None = None) -> Pro
             async with client_cm as client:
                 r = await client.post(url, content=body_text.encode("utf-8"), headers=headers)
             http_status = r.status_code
+            resp_headers = r.headers
             resp_text = r.text[:4000]
             try:
                 resp_body = r.json()
@@ -185,7 +202,7 @@ async def process_dispatch(dispatch_id: int, now: datetime | None = None) -> Pro
             exc_code = "connection_error:" + type(e).__name__
     finished = utcnow()
 
-    c = classify(http_status, resp_body, exc_code)
+    c = classify(http_status, resp_body, exc_code, resp_headers)
     new_status = c.status
     retry_in: float | None = None
     next_at = None

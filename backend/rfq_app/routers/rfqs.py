@@ -10,6 +10,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 
@@ -147,6 +148,8 @@ def _quote_view(rfq: dict, quote: dict, items: list[dict]) -> dict:
         tax = t.tax_cents or 0
         out["totals"]["grand_total"] = pl.json_number(t.total_cents + (0 if quote["tax_included"] else tax))
         out["warnings"] = pl.item_warnings(rfq, items)
+        if quote.get("rfq_revision") and rfq.get("spec_revision") and quote["rfq_revision"] < rfq["spec_revision"]:
+            out["warnings"].append("spec_outdated")
     return out
 
 
@@ -165,6 +168,7 @@ async def app_config() -> dict:
         "allow_partner_prod": s.allow_partner_prod,
         "vendor_name": s.vendor_name,
         "today": taipei_today().isoformat(),
+        "reply_mode": __import__("rfq_app.mail.reply", fromlist=["reply_mode"]).reply_mode(),
     }
 
 
@@ -254,10 +258,10 @@ async def create_quote(rfq_id: int, body: QuoteIn, user: str = Depends(require_u
         q = (
             await conn.execute(
                 text(
-                    "INSERT INTO rfq.quotes (rfq_id, quote_no, quote_revision, quote_date, valid_until, tax_included, lead_basis, delivery_date, note, created_by) "
-                    "VALUES (:r, :no, 1, :qd, :vu, :ti, :lb, :dd, :note, :by) RETURNING *"
+                    "INSERT INTO rfq.quotes (rfq_id, quote_no, quote_revision, rfq_revision, quote_date, valid_until, tax_included, lead_basis, delivery_date, note, created_by) "
+                    "VALUES (:r, :no, 1, :srev, :qd, :vu, :ti, :lb, :dd, :note, :by) RETURNING *"
                 ),
-                {"r": rfq_id, "no": no, "qd": qd, "vu": vu, "ti": body.tax_included, "lb": body.lead_basis, "dd": body.delivery_date, "note": body.note.strip(), "by": user},
+                {"r": rfq_id, "no": no, "srev": rfq["spec_revision"], "qd": qd, "vu": vu, "ti": body.tax_included, "lb": body.lead_basis, "dd": body.delivery_date, "note": body.note.strip(), "by": user},
             )
         ).mappings().one()
         await conn.execute(
@@ -297,6 +301,11 @@ async def get_quote(quote_id: int) -> dict:
         view["dispatches"] = dispatches
         revs = (await conn.execute(text("SELECT id, quote_revision, status FROM rfq.quotes WHERE quote_no=:no ORDER BY quote_revision"), {"no": q["quote_no"]})).mappings()
         view["revisions"] = [dict(r) for r in revs]
+        view["mails"] = [_plain(dict(m)) for m in (await conn.execute(text("SELECT id, mode, to_addr, subject, status, error, attempt_count, created_at, sent_at FROM rfq.quote_mails WHERE quote_id=:id ORDER BY id DESC"), {"id": quote_id})).mappings()]
+        from ..mail.reply import reply_mode
+
+        view["reply_mode"] = reply_mode()
+        view["has_source_mail"] = bool(rfq.get("last_message_id"))
         view["rfq"] = _plain(rfq)
         return view
 
@@ -328,10 +337,10 @@ async def _apply_patch(conn, quote_id: int, rfq: dict, base: dict, base_items: l
         qid = (
             await conn.execute(
                 text(
-                    "INSERT INTO rfq.quotes (rfq_id, quote_no, quote_revision, quote_date, valid_until, tax_included, lead_basis, delivery_date, note, created_by) "
-                    "VALUES (:r, :no, :rev, :qd, :vu, :ti, :lb, :dd, :note, :by) RETURNING id"
+                    "INSERT INTO rfq.quotes (rfq_id, quote_no, quote_revision, rfq_revision, quote_date, valid_until, tax_included, lead_basis, delivery_date, note, created_by) "
+                    "VALUES (:r, :no, :rev, :srev, :qd, :vu, :ti, :lb, :dd, :note, :by) RETURNING id"
                 ),
-                {"r": base["rfq_id"], "no": base["quote_no"], "rev": rev, "by": user, **vals},
+                {"r": base["rfq_id"], "no": base["quote_no"], "rev": rev, "srev": rfq["spec_revision"], "by": user, **vals},
             )
         ).scalar_one()
         await conn.execute(
@@ -340,8 +349,8 @@ async def _apply_patch(conn, quote_id: int, rfq: dict, base: dict, base_items: l
         )
         return qid
     await conn.execute(
-        text("UPDATE rfq.quotes SET quote_date=:qd, valid_until=:vu, tax_included=:ti, lead_basis=:lb, delivery_date=:dd, note=:note, updated_at=now() WHERE id=:id"),
-        {"id": quote_id, **vals},
+        text("UPDATE rfq.quotes SET quote_date=:qd, valid_until=:vu, tax_included=:ti, lead_basis=:lb, delivery_date=:dd, note=:note, rfq_revision=:srev, updated_at=now() WHERE id=:id"),
+        {"id": quote_id, "srev": rfq["spec_revision"], **vals},
     )
     await conn.execute(
         text("UPDATE rfq.quote_items SET part=:p, material=:m, qty=:qty, unit=:u, unit_price=:up, lead_days=:ld WHERE quote_id=:q AND line_no=1"),
@@ -411,7 +420,37 @@ async def send_quote(quote_id: int, user: str = Depends(require_user)) -> dict:
         ).scalar_one()
         await conn.execute(text("UPDATE rfq.quotes SET status='sending', updated_at=now() WHERE id=:id"), {"id": quote_id})
     state = await enqueue(did)
-    return {"dispatch_id": did, "event_id": event_id, "enqueue": state, "quote": await get_quote(quote_id)}
+    from ..mail.reply import send_quote_reply  # 避免循環匯入
+
+    mail = await send_quote_reply(quote_id, user)
+    return {"dispatch_id": did, "event_id": event_id, "enqueue": state, "mail": mail, "quote": await get_quote(quote_id)}
+
+
+@router.get("/quotes/{quote_id}/pdf")
+async def quote_pdf(quote_id: int) -> Response:
+    from urllib.parse import quote as urlquote
+
+    from ..mail.reply import load_quote_bundle
+    from ..quote_pdf import build_quote_pdf, pdf_filename
+
+    async with db.tx() as conn:
+        try:
+            rfq, q, items = await load_quote_bundle(conn, quote_id)
+        except LookupError:
+            raise HTTPException(404, "找不到報價")
+    data = build_quote_pdf(rfq=rfq, quote=q, items=items, vendor_name=config.settings.vendor_name)
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename*=UTF-8''{urlquote(pdf_filename(q))}", "Cache-Control": "private, no-store"})
+
+
+@router.post("/quotes/{quote_id}/mail")
+async def resend_mail(quote_id: int, user: str = Depends(require_user)) -> dict:
+    from ..mail.reply import send_quote_reply
+
+    async with db.tx() as conn:
+        q = await _quote(conn, quote_id)
+    if q["status"] == "draft":
+        raise HTTPException(409, "草稿還沒送出，不寄回信")
+    return await send_quote_reply(quote_id, user, force=True)
 
 
 @router.post("/dispatches/{dispatch_id}/requeue")

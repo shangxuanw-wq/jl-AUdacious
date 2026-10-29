@@ -17,6 +17,7 @@ MAILBOX = "jl-jimmy@jauhlirn.com"
 KEY = base64.urlsafe_b64encode(b"k" * 32).decode()
 
 SAMPLE = """詢價編號：AUD-RFQ-2026-0099
+規格版次：1
 專案：工件 AUD-RFQ-2026-0099-1
 需求日：2026/12/31
 聯絡人：王小明 <pm@audacious.example>（澳得仕教育 AUdaciousEdu）
@@ -27,7 +28,7 @@ SAMPLE = """詢價編號：AUD-RFQ-2026-0099
 　需求日：這行在分隔線後，不能當欄位
 　備註：【串接試跑】這是測試件
 """
-SUBJECT = "[詢價] AUD-RFQ-2026-0099 工件 AUD-RFQ-2026-0099-1 ×3"
+SUBJECT = "[詢價][測試] AUD-RFQ-2026-0099 工件 AUD-RFQ-2026-0099-1 ×3"
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,17 @@ def test_parse_sample():
     assert p.contact_name == "王小明" and p.contact_email == "pm@audacious.example"
     assert p.spec_text.startswith("製程：FDM") and "需求日：這行" in p.spec_text
     assert p.warnings == []
+    assert p.spec_revision == 1 and p.is_test is True
+
+
+def test_parse_spec_revision():
+    assert parse_rfq_mail("[詢價] AUD-RFQ-2026-0099 x", SAMPLE.replace("規格版次：1", "規格版次：3")).spec_revision == 3
+    assert parse_rfq_mail("[詢價] AUD-RFQ-2026-0099 x", SAMPLE).is_test is False
+    old = parse_rfq_mail(SUBJECT, SAMPLE.replace("規格版次：1\n", ""))
+    assert old.spec_revision is None and old.warnings == ["spec_revision_missing"]
+    with pytest.raises(ParseError) as e:
+        parse_rfq_mail(SUBJECT, SAMPLE.replace("規格版次：1", "規格版次：一"))
+    assert e.value.code == "bad_spec_revision"
 
 
 def test_parse_variants():
@@ -111,6 +123,7 @@ class FakeGmail:
         self.token_fail = False
         self.profile = MAILBOX
         self.calls: list[str] = []
+        self.sent: list[dict] = []
 
     def handler(self, req: httpx.Request) -> httpx.Response:
         url = str(req.url)
@@ -127,6 +140,10 @@ class FakeGmail:
             return httpx.Response(200)
         assert req.headers.get("authorization") == "Bearer at-1"
         path = urlparse(url).path
+        if req.method == "POST" and path.endswith("/messages/send"):
+            j = json.loads(req.content)
+            self.sent.append({"raw": base64.urlsafe_b64decode(j["raw"]), "threadId": j.get("threadId")})
+            return httpx.Response(200, json={"id": f"sent-{len(self.sent)}", "threadId": j.get("threadId")})
         if path.endswith("/profile"):
             return httpx.Response(200, json={"emailAddress": self.profile})
         if path.endswith("/messages"):
@@ -188,7 +205,7 @@ async def test_poll_creates_then_updates(client, fake):
     assert (await client.post("/api/gmail/poll")).json()["new"] == 0
 
     # 同一詢價編號補寄（數量改 5）：更新同一張單
-    fake.messages["m2"] = make_msg("m2", SAMPLE.replace("3 pcs", "5 pcs"), at=1_790_000_100_000)
+    fake.messages["m2"] = make_msg("m2", SAMPLE.replace("3 pcs", "5 pcs").replace("規格版次：1", "規格版次：2"), at=1_790_000_100_000)
     assert (await client.post("/api/gmail/poll")).json()["results"][0]["status"] == "updated"
     d = (await client.get(f"/api/rfqs/{rfqs[0]['id']}")).json()
     assert d["rfq"]["quantity"] == 5 and d["rfq"]["mail_count"] == 2 and len(d["mails"]) == 2
@@ -215,13 +232,42 @@ async def test_poll_ignores_and_errors(client, fake, monkeypatch):
     assert len(st["messages"]) == 3 and st["mailboxes"][0]["last_error"] is None
 
 
+async def test_spec_revision_flow(client, fake):
+    await connect_mailbox()
+    fake.messages["m1"] = make_msg("m1", SAMPLE)
+    await client.post("/api/gmail/poll")
+    rid = (await client.get("/api/rfqs")).json()["rfqs"][0]["id"]
+    d = (await client.get(f"/api/rfqs/{rid}")).json()["rfq"]
+    assert d["spec_revision"] == 1 and d["is_test"] is True
+
+    # 同版次重寄（數量看起來不同也不動規格）：不用重新報價
+    fake.messages["m2"] = make_msg("m2", SAMPLE.replace("3 pcs", "4 pcs"), at=1_790_000_100_000)
+    r = (await client.post("/api/gmail/poll")).json()["results"][0]
+    assert r["status"] == "updated" and r["error"] == "same_spec_resent"
+    d = (await client.get(f"/api/rfqs/{rid}")).json()
+    assert d["rfq"]["quantity"] == 3 and d["rfq"]["mail_count"] == 2
+
+    # 版次變大：更新規格
+    fake.messages["m3"] = make_msg("m3", SAMPLE.replace("規格版次：1", "規格版次：2").replace("3 pcs", "6 pcs"), at=1_790_000_200_000)
+    r = (await client.post("/api/gmail/poll")).json()["results"][0]
+    assert r["status"] == "updated" and r["error"] == "spec_revision_up"
+    d = (await client.get(f"/api/rfqs/{rid}")).json()["rfq"]
+    assert d["spec_revision"] == 2 and d["quantity"] == 6 and d["spec_changed_at"]
+
+    # 舊版次晚到：略過
+    fake.messages["m4"] = make_msg("m4", SAMPLE.replace("3 pcs", "9 pcs"), at=1_790_000_300_000)
+    r = (await client.post("/api/gmail/poll")).json()["results"][0]
+    assert r["status"] == "ignored" and r["error"] == "older_spec_revision"
+    assert (await client.get(f"/api/rfqs/{rid}")).json()["rfq"]["quantity"] == 6
+
+
 async def test_closed_rfq_not_changed(client, fake):
     await connect_mailbox()
     fake.messages["m1"] = make_msg("m1", SAMPLE)
     await client.post("/api/gmail/poll")
     async with db.tx() as conn:
         await conn.execute(text("UPDATE rfq.rfqs SET status='closed'"))
-    fake.messages["m2"] = make_msg("m2", SAMPLE.replace("3 pcs", "9 pcs"), at=1_790_000_100_000)
+    fake.messages["m2"] = make_msg("m2", SAMPLE.replace("3 pcs", "9 pcs").replace("規格版次：1", "規格版次：2"), at=1_790_000_100_000)
     assert (await client.post("/api/gmail/poll")).json()["results"][0]["error"] == "rfq_closed"
     assert (await client.get("/api/rfqs")).json()["rfqs"][0]["quantity"] == 3
 
@@ -269,3 +315,96 @@ async def test_cron_runs_mail_poll(client, fake, monkeypatch):
     config.reload_settings()
     r = await client.get("/api/cron/sweep", headers={"Authorization": "Bearer cron-secret-0123456789"})
     assert r.json()["mail"]["new"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 報價 PDF 與回信
+# ---------------------------------------------------------------------------
+
+
+async def _quote_from_mail(client, fake):
+    await connect_mailbox()
+    fake.messages["m1"] = make_msg("m1", SAMPLE)
+    await client.post("/api/gmail/poll")
+    rid = (await client.get("/api/rfqs")).json()["rfqs"][0]["id"]
+    r = await client.post(f"/api/rfqs/{rid}/quotes", json={"unit_price": "350.5", "lead_days": 10, "note": "測試"})
+    assert r.status_code == 201, r.text
+    return rid, r.json()
+
+
+def _parse(raw: bytes):
+    import email
+    from email import policy
+
+    return email.message_from_bytes(raw, policy=policy.default)
+
+
+async def test_send_replies_in_thread_with_pdf(client, fake):
+    rid, q = await _quote_from_mail(client, fake)
+    r = await client.post(f"/api/quotes/{q['id']}/send")
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["enqueue"] == "accepted"
+    assert j["mail"]["status"] == "sent" and j["mail"]["mode"] == "self" and j["mail"]["to"] == MAILBOX
+    assert len(fake.sent) == 1 and fake.sent[0]["threadId"] == "t1"
+    m = _parse(fake.sent[0]["raw"])
+    assert m["To"] == MAILBOX and m["Subject"] == "Re: " + SUBJECT
+    assert m["In-Reply-To"] == "<m1@audacious.example>" and m["References"] == "<m1@audacious.example>"
+    body = m.get_body(("plain",)).get_content()
+    assert "開發期測試" in body and "AUD-RFQ-2026-0099" in body and "規格版次 1" in body and q["quote_no"] in body
+    atts = list(m.iter_attachments())
+    assert len(atts) == 1 and atts[0].get_content_type() == "application/pdf"
+    pdf = atts[0].get_content()
+    assert pdf.startswith(b"%PDF") and atts[0].get_filename() == f"報價單_{q['quote_no']}_r1.pdf"
+    # JSON 帶規格版次
+    full = (await client.get(f"/api/quotes/{q['id']}")).json()
+    assert full["dispatches"][0]["payload"]["rfq_revision"] == 1
+    assert full["mails"][0]["status"] == "sent" and full["reply_mode"] == "self"
+
+    # 自動流程不重寄；手動重寄會再寄一封
+    r = await client.post(f"/api/quotes/{q['id']}/mail")
+    assert r.json()["status"] == "sent" and len(fake.sent) == 2
+
+
+async def test_pdf_contains_required_fields(client, fake, tmp_path):
+    import shutil
+    import subprocess
+
+    rid, q = await _quote_from_mail(client, fake)
+    r = await client.get(f"/api/quotes/{q['id']}/pdf")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
+    if shutil.which("pdftotext"):
+        f = tmp_path / "q.pdf"
+        f.write_bytes(r.content)
+        txt = subprocess.run(["pdftotext", str(f), "-"], capture_output=True, text=True).stdout
+        for needle in ("AUD-RFQ-2026-0099", "規格版次", q["quote_no"], "修訂", "350.50", "1,051.50", "營業稅", "1,104.50", "10 個工作天", "自收到 PO 起算", "有效期限"):
+            assert needle in txt, needle
+
+
+async def test_live_mode_goes_to_reply_to(client, fake, monkeypatch):
+    monkeypatch.setenv("RFQ_MAIL_REPLY", "live")
+    config.reload_settings()
+    rid, q = await _quote_from_mail(client, fake)
+    j = (await client.post(f"/api/quotes/{q['id']}/send")).json()
+    assert j["mail"]["mode"] == "live" and j["mail"]["to"] == "pm@audacious.example"
+    m = _parse(fake.sent[0]["raw"])
+    assert m["To"] == "pm@audacious.example" and "開發期測試" not in m.get_body(("plain",)).get_content()
+
+
+async def test_reply_off_and_manual_rfq(client, fake, monkeypatch):
+    r = await client.post("/api/rfqs", json={"rfq_number": "AUD-RFQ-2026-0099", "item_name": "x", "material_text": "PLA", "quantity": 1})
+    q = (await client.post(f"/api/rfqs/{r.json()['id']}/quotes", json={"unit_price": "100", "lead_days": 5})).json()
+    j = (await client.post(f"/api/quotes/{q['id']}/send")).json()
+    assert j["mail"] == {"status": "skipped", "reason": "no_source_mail"} and fake.sent == []
+    monkeypatch.setenv("RFQ_MAIL_REPLY", "off")
+    config.reload_settings()
+    assert (await client.post(f"/api/quotes/{q['id']}/mail")).json()["reason"] == "reply_off"
+
+
+async def test_reply_failure_recorded(client, fake):
+    rid, q = await _quote_from_mail(client, fake)
+    fake.token_fail = True
+    gmail._token_cache.clear()
+    j = (await client.post(f"/api/quotes/{q['id']}/send")).json()
+    assert j["enqueue"] == "accepted" and j["mail"]["status"] == "failed" and j["mail"]["error"].startswith("auth:")
+    assert (await client.get(f"/api/quotes/{q['id']}")).json()["mails"][0]["status"] == "failed"

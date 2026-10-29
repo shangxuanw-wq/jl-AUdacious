@@ -106,19 +106,19 @@ async def _handle(box: dict, msg: dict) -> dict:
         inbound_id = (
             await conn.execute(
                 text(
-                    "INSERT INTO rfq.inbound_messages (mailbox_id, gmail_id, thread_id, message_id_header, subject, from_addr, reply_to, received_at, rfq_number, status, error, attachments) "
-                    "VALUES (:m, :gid, :tid, :mid, :subj, :from, :rt, :at, :num, :st, :err, CAST(:att AS jsonb)) "
+                    "INSERT INTO rfq.inbound_messages (mailbox_id, gmail_id, thread_id, message_id_header, subject, from_addr, reply_to, received_at, rfq_number, status, error, attachments, spec_revision, is_test) "
+                    "VALUES (:m, :gid, :tid, :mid, :subj, :from, :rt, :at, :num, :st, :err, CAST(:att AS jsonb), :srev, :test) "
                     "ON CONFLICT (mailbox_id, gmail_id) DO NOTHING RETURNING id"
                 ),
-                {**base, "num": number, "st": status, "err": error},
+                {**base, "num": number, "st": status, "err": error, "srev": parsed.spec_revision if parsed else None, "test": bool(parsed and parsed.is_test)},
             )
         ).scalar()
         if inbound_id is None:  # 另一個執行同時處理了
             return {"gmail_id": msg["id"], "status": "skipped"}
         if parsed is not None:
             status, error, rfq_id = await _upsert_rfq(conn, parsed, inbound_id, reply_to, received)
-            if parsed.warnings and status in ("created", "updated"):
-                error = ",".join(parsed.warnings)
+            if status in ("created", "updated"):
+                error = ",".join([*([error] if error else []), *parsed.warnings]) or None
             await conn.execute(
                 text("UPDATE rfq.inbound_messages SET status=:st, error=:err, rfq_id=:r WHERE id=:id"),
                 {"st": status, "err": error, "r": rfq_id, "id": inbound_id},
@@ -132,7 +132,7 @@ async def _upsert_rfq(conn, p, inbound_id: int, reply_to: str | None, received: 
     row = (
         await conn.execute(
             text(
-                "SELECT r.id, r.status, m.received_at AS last_at FROM rfq.rfqs r LEFT JOIN rfq.inbound_messages m ON m.id = r.last_message_id "
+                "SELECT r.id, r.status, r.spec_revision, m.received_at AS last_at FROM rfq.rfqs r LEFT JOIN rfq.inbound_messages m ON m.id = r.last_message_id "
                 "WHERE r.customer_id=:c AND r.rfq_number=:n FOR UPDATE OF r"
             ),
             {"c": cust, "n": p.rfq_number},
@@ -151,40 +151,58 @@ async def _upsert_rfq(conn, p, inbound_id: int, reply_to: str | None, received: 
         "rt": reply_to,
         "sp": p.spec_text,
         "lm": inbound_id,
+        "srev": p.spec_revision or 1,
+        "test": p.is_test,
     }
     if row is None:
         rid = (
             await conn.execute(
                 text(
                     "INSERT INTO rfq.rfqs (customer_id, rfq_number, item_name, material_text, quantity, unit, need_date, need_date_text, project_name, "
-                    "contact_name, contact_email, reply_to, spec_text, last_message_id, mail_count, source, created_by) "
-                    "VALUES (:c, :n, :i, :mt, :q, :u, :nd, :ndt, :pn, :cn, :ce, :rt, :sp, :lm, 1, 'email', 'mail') RETURNING id"
+                    "contact_name, contact_email, reply_to, spec_text, last_message_id, mail_count, source, created_by, spec_revision, is_test) "
+                    "VALUES (:c, :n, :i, :mt, :q, :u, :nd, :ndt, :pn, :cn, :ce, :rt, :sp, :lm, 1, 'email', 'mail', :srev, :test) RETURNING id"
                 ),
                 {"c": cust, "n": p.rfq_number, **vals},
             )
         ).scalar_one()
         status = "created"
+        changed = False
     else:
         rid = row["id"]
         if row["status"] == "closed":
             return "ignored", "rfq_closed", rid
-        if row["last_at"] is not None and row["last_at"] > received:
+        cur = row["spec_revision"]
+        vals["srev"] = p.spec_revision or cur  # 舊格式信件沒有規格版次：維持原值
+        if p.spec_revision is not None and p.spec_revision < cur:
+            await conn.execute(text("UPDATE rfq.rfqs SET mail_count = mail_count + 1 WHERE id=:id"), {"id": rid})
+            return "ignored", "older_spec_revision", rid
+        if p.spec_revision is None and row["last_at"] is not None and row["last_at"] > received:
             await conn.execute(text("UPDATE rfq.rfqs SET mail_count = mail_count + 1 WHERE id=:id"), {"id": rid})
             return "ignored", "older_than_latest", rid
+        if p.spec_revision is not None and p.spec_revision == cur:
+            # 同一份規格重寄：不用重新報價；只更新聯絡資訊與「最新一封」（回信用）
+            await conn.execute(
+                text("UPDATE rfq.rfqs SET contact_name=:cn, contact_email=:ce, reply_to=:rt, last_message_id=:lm, mail_count = mail_count + 1, updated_at=now() WHERE id=:id"),
+                {"cn": p.contact_name, "ce": p.contact_email, "rt": reply_to, "lm": inbound_id, "id": rid},
+            )
+            return "updated", "same_spec_resent", rid
         await conn.execute(
             text(
                 "UPDATE rfq.rfqs SET item_name=:i, material_text=:mt, quantity=:q, unit=:u, need_date=:nd, need_date_text=:ndt, project_name=:pn, "
-                "contact_name=:cn, contact_email=:ce, reply_to=:rt, spec_text=:sp, last_message_id=:lm, mail_count = mail_count + 1, updated_at=now() WHERE id=:id"
+                "contact_name=:cn, contact_email=:ce, reply_to=:rt, spec_text=:sp, last_message_id=:lm, mail_count = mail_count + 1, "
+                "spec_revision=:srev, is_test=:test, spec_changed_at = CASE WHEN :srev > spec_revision THEN now() ELSE spec_changed_at END, updated_at=now() WHERE id=:id"
             ),
             {**vals, "id": rid},
         )
         status = "updated"
+        changed = p.spec_revision is not None and p.spec_revision > cur
     if _sync_mock():
         await conn.execute(
             text(
-                "INSERT INTO mock_partner.rfqs (number, status, quantity, unit, item_name, material_text) VALUES (:n, 'sent', :q, :u, :i, :m) "
-                "ON CONFLICT (number) DO UPDATE SET quantity=EXCLUDED.quantity, unit=EXCLUDED.unit, item_name=EXCLUDED.item_name, material_text=EXCLUDED.material_text"
+                "INSERT INTO mock_partner.rfqs (number, status, quantity, unit, item_name, material_text, spec_revision, is_test) VALUES (:n, 'sent', :q, :u, :i, :m, :srev, :test) "
+                "ON CONFLICT (number) DO UPDATE SET quantity=EXCLUDED.quantity, unit=EXCLUDED.unit, item_name=EXCLUDED.item_name, material_text=EXCLUDED.material_text, "
+                "spec_revision=GREATEST(mock_partner.rfqs.spec_revision, EXCLUDED.spec_revision), is_test=EXCLUDED.is_test"
             ),
-            {"n": p.rfq_number, "q": p.quantity, "u": "套" if p.unit == "sets" else "件", "i": p.item_name, "m": p.material_text},
+            {"n": p.rfq_number, "q": p.quantity, "u": "套" if p.unit == "sets" else "件", "i": p.item_name, "m": p.material_text, "srev": p.spec_revision or 1, "test": p.is_test},
         )
-    return status, None, rid
+    return status, ("spec_revision_up" if changed else None), rid

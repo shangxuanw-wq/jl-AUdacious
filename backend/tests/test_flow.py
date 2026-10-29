@@ -98,7 +98,8 @@ async def test_payload_types_and_verbatim(client):
         assert not isinstance(p["items"][0][k], str)
     for k in ("total", "tax", "quote_revision"):
         assert not isinstance(p[k], str)
-    contract_keys = {"rfq", "items", "total", "tax", "tax_included", "currency", "quote_no", "quote_revision", "event_id", "quote_date", "valid_until", "delivery_date", "lead_basis", "vendor", "note"}
+    assert p["rfq_revision"] == 1 and isinstance(p["rfq_revision"], int)
+    contract_keys = {"rfq", "rfq_revision", "items", "total", "tax", "tax_included", "currency", "quote_no", "quote_revision", "event_id", "quote_date", "valid_until", "delivery_date", "lead_basis", "vendor", "note"}
     assert set(p) <= contract_keys
     assert set(p["items"][0]) <= {"qty", "unit_price", "lead_days", "subtotal", "unit", "part", "material"}
 
@@ -142,7 +143,7 @@ async def test_retry_same_event_and_schedule(client):
     r = await dispatcher.process_dispatch(did, now=t0)  # 還沒到時間
     assert r.state == "not_due"
     r = await dispatcher.process_dispatch(did, now=d1["next_attempt_at"] + timedelta(seconds=1))
-    assert r.state == "retry_wait" and r.retry_in == 300
+    assert r.state == "retry_wait" and r.retry_in == 5
     d2 = await dispatch_row(did)
     r = await dispatcher.process_dispatch(did, now=d2["next_attempt_at"] + timedelta(seconds=1))
     assert r.state == "accepted"
@@ -154,20 +155,55 @@ async def test_retry_same_event_and_schedule(client):
 
 
 def test_delays():
-    assert [dispatcher.next_delay(n) for n in (1, 2, 3, 4)] == [60, 300, 1800, 1800]
-    assert dispatcher.next_delay(1, 60) == 60 and dispatcher.next_delay(2, 60) == 300
+    assert [dispatcher.next_delay(n) for n in (1, 2, 3, 4, 5, 6, 7)] == [2, 5, 15, 60, 300, 1800, 1800]
+    assert dispatcher.next_delay(1, 60) == 60 and dispatcher.next_delay(5, 60) == 300
 
 
-async def test_gave_up_after_5(client):
+def test_classify_contract_v5():
+    c = dispatcher.classify
+    assert c(503, {"code": "disabled"}, None).retry is False and c(503, {"code": "disabled"}, None).error_code == "endpoint_disabled"
+    m = c(503, {"code": "maintenance"}, None, {"retry-after": "600"})
+    assert m.retry and m.error_code == "maintenance" and m.min_delay == 600
+    assert c(503, {"code": "maintenance"}, None).min_delay == 600
+    assert c(502, {}, None).retry and c(502, {}, None).min_delay == 0
+    assert c(429, {}, None, {"retry-after": "90"}).min_delay == 90 and c(429, {}, None).min_delay == 60
+    assert c(409, {"code": "event_in_flight"}, None, {"retry-after": "5"}).min_delay == 5
+    assert c(409, {"code": "send_pending"}, None).min_delay == 300
+    for code in ("closed", "status", "no_snapshot", "rfq_revision_unknown", "event_conflict", "not_test_rfq"):
+        assert c(409, {"code": code}, None).retry is False
+    assert c(400, {"issues": [{"code": "too_long"}]}, None).error_code == "too_long"
+    assert c(200, {"outcome": "duplicate", "status": "pending"}, None).status == "duplicate"
+
+
+async def test_inline_short_retries(client, monkeypatch):
+    monkeypatch.setattr(dispatcher, "RETRY_DELAYS", [0.01, 0.01, 0.01, 60, 300, 1800])
+    monkeypatch.setenv("RFQ_INLINE_RETRY_SECONDS", "10")
+    config.reload_settings()
     rfq = await make_rfq(client)
     q = await make_quote(client, rfq["id"])
-    await faults(client, *[{"status": 503}] * 6)
+    await faults(client, {"status": 503}, {"status": 502})
+    res = await send(client, q["id"])
+    d = await dispatch_row(res["dispatch_id"])
+    assert d["status"] == "accepted" and d["attempt_count"] == 3
+    # 長間隔（Retry-After 60）不在送出當下等
+    q2 = await make_quote(client, rfq["id"])
+    await faults(client, {"status": 429})
+    d = await dispatch_row((await send(client, q2["id"]))["dispatch_id"])
+    assert d["status"] == "retry_wait" and d["attempt_count"] == 1
+    monkeypatch.undo()
+    config.reload_settings()
+
+
+async def test_gave_up_after_7(client):
+    rfq = await make_rfq(client)
+    q = await make_quote(client, rfq["id"])
+    await faults(client, *[{"status": 503}] * 8)
     did = (await send(client, q["id"]))["dispatch_id"]
-    for _ in range(6):
+    for _ in range(8):
         d = await dispatch_row(did)
         await dispatcher.process_dispatch(did, now=d["next_attempt_at"] + timedelta(seconds=1))
     d = await dispatch_row(did)
-    assert d["status"] == "gave_up" and d["attempt_count"] == 5
+    assert d["status"] == "gave_up" and d["attempt_count"] == 7
     assert (await client.get(f"/api/quotes/{q['id']}")).json()["status"] == "failed"
 
 
@@ -339,7 +375,7 @@ async def test_token_not_leaked(client, caplog):
 async def test_mock_basic_errors(client):
     url = "/api/mock-aud/api/rfq/quotes"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as raw:
-        assert (await raw.get(url)).json()["contract_version"] == "2026-10-29.4"
+        assert (await raw.get(url)).json()["contract_version"] == "2026-10-29.5"
         assert (await raw.post(url, json={})).status_code == 401
         h = {"Authorization": f"Bearer {TOKEN}"}
         assert (await raw.post(url, content=b"{}", headers={**h, "Content-Type": "text/plain"})).status_code == 415
@@ -352,6 +388,66 @@ async def test_mock_basic_errors(client):
         assert (await raw.post(url, content=big.encode(), headers={**h, "Content-Type": "application/json"})).status_code == 413
         r = await raw.post(url, json={"rfq": RFQ, "items": [{"qty": 1, "unit_price": "350", "lead_days": 1}]}, headers=h)
         assert r.status_code == 400 and r.json()["issues"][0]["code"] == "invalid_number"
+        assert r.json()["contract_version"] == "2026-10-29.5" and r.json()["request_id"]
+
+
+def _q(**kw):
+    item = {"part": f"工件 {RFQ}-1", "material": "PLA", "qty": 1, "unit": "pcs", "unit_price": 350, "subtotal": 350, "lead_days": 10}
+    item.update(kw.pop("item", {}))
+    return {"rfq": RFQ, "rfq_revision": 1, "quote_no": "AU26102999", "quote_revision": 1, "tax_included": False, "items": [item], "total": 350, "tax": 18, **kw}
+
+
+async def test_mock_contract_v5(client):
+    url = "/api/mock-aud/api/rfq/quotes"
+    h = {"Authorization": f"Bearer {TOKEN}"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as raw:
+        r = await raw.post(url, json=_q(event_id="v5-a"), headers=h)
+        assert r.status_code == 202 and r.json()["spec_revision"] == 1
+        # 不存在的規格版次
+        r = await raw.post(url, json=_q(event_id="v5-b", rfq_revision=2), headers=h)
+        assert r.status_code == 409 and r.json()["code"] == "rfq_revision_unknown"
+        # rfq_revision 型別錯
+        r = await raw.post(url, json=_q(event_id="v5-c", rfq_revision="1"), headers=h)
+        assert r.status_code == 400
+        # 超長：整筆拒收
+        r = await raw.post(url, json=_q(event_id="v5-d", note="x" * 1001), headers=h)
+        assert r.status_code == 400 and r.json()["issues"][0]["code"] == "too_long"
+        r = await raw.post(url, json=_q(event_id="v5-e", item={"part": "p" * 121}), headers=h)
+        assert r.status_code == 400 and r.json()["issues"][0]["code"] == "too_long"
+        # 同修訂、note 不同 → revision_reused
+        r = await raw.post(url, json=_q(event_id="v5-f", note="不含運費"), headers=h)
+        assert r.status_code == 202 and any(i["code"] == "revision_reused" for i in r.json()["issues"])
+        # 自我測試只能打測試單
+        r = await raw.post(url, json=_q(event_id="v5-g", quote_revision=5), headers={**h, "X-Self-Test": "1"})
+        assert r.status_code == 409 and r.json()["code"] == "not_test_rfq"
+        assert (await client.patch(f"/api/mock-aud/_admin/rfqs/{RFQ}", json={"is_test": True, "spec_revision": 2})).status_code == 200
+        r = await raw.post(url, json=_q(event_id="v5-h", quote_revision=6), headers={**h, "X-Self-Test": "1"})
+        assert r.status_code == 202 and any(i["code"] == "spec_outdated" for i in r.json()["issues"])
+        # 沒帶 rfq_revision、規格不只一版 → 收下但要人工指定
+        body = _q(event_id="v5-i", quote_revision=7)
+        body.pop("rfq_revision")
+        r = await raw.post(url, json=body, headers=h)
+        assert r.status_code == 202 and any(i["code"] == "spec_unbound" and i["level"] == "error" for i in r.json()["issues"])
+        # 故障帶 Retry-After
+        await faults(client, {"status": 503, "code": "maintenance", "retry_after": 600})
+        r = await raw.post(url, json=_q(event_id="v5-j"), headers=h)
+        assert r.status_code == 503 and r.headers["retry-after"] == "600"
+
+
+async def test_dispatch_send_pending_waits_300(client):
+    rfq = await make_rfq(client, number="AUD-RFQ-2026-0097", sync=False)
+    q = await make_quote(client, rfq["id"])
+    d = await dispatch_row((await send(client, q["id"]))["dispatch_id"])
+    assert d["status"] == "retry_wait" and (d["next_attempt_at"] - d["updated_at"]).total_seconds() >= 295
+
+
+async def test_dispatch_endpoint_disabled_no_retry(client):
+    rfq = await make_rfq(client)
+    q = await make_quote(client, rfq["id"])
+    await faults(client, {"status": 503, "code": "disabled"})
+    d = await dispatch_row((await send(client, q["id"]))["dispatch_id"])
+    assert d["status"] == "rejected" and d["last_error_code"] == "endpoint_disabled"
+    assert (await client.get(f"/api/quotes/{q['id']}")).json()["status"] == "failed"
 
 
 async def test_internal_mock_target(client):
