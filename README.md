@@ -16,8 +16,12 @@
             Supabase Postgres（rfq.*、mock_partner.*）
 ```
 
-- 送出：`POST /api/quotes/{id}/send` 建立送出紀錄（凍結 payload 與 event_id）→ 丟進佇列 → 消費者 `rfq_app.queue_worker` 送出。
-- 重送：可重送的錯誤（5xx、逾時、429、409 event_in_flight／send_pending）用 `RetryAfter` 排下一次；間隔 60／300／1800／1800 秒，總共最多 5 次。狀態以資料庫為準，重複投遞安全。
+- 送出：`POST /api/quotes/{id}/send` 建立送出紀錄（凍結 payload 與 event_id），當場送第 1 次。
+- 重送：可重送的錯誤（5xx、逾時、429、409 event_in_flight／send_pending）間隔 60／300／1800／1800 秒，總共最多 5 次。
+  狀態以資料庫為準（`next_attempt_at`），由三條路觸發，誰先到都一樣：
+  1. Vercel Queues 延遲訊息（topic `quote-dispatch`，推送由 `main.py` 中介層交給 SDK）
+  2. 人員介面開著送出中的報價時，每 5 秒呼叫 `POST /api/dispatches/sweep`
+  3. 每天一次的 Vercel Cron `/api/cron/sweep`（`CRON_SECRET`）
 - 防呆：沒設 `RFQ_ALLOW_PARTNER_PROD=true` 時，送往 `audacious-3d-studio.vercel.app` 一律擋下。
 
 ## 目錄
@@ -31,7 +35,7 @@
 | `backend/rfq_app/mock_aud/` | 假澳得仕（行為對照澳得仕原始碼） |
 | `backend/sql/` | 資料表 migration（已套用到 Supabase） |
 | `backend/rfq_app/selftest.py` | 雲端自我測試（只送假澳得仕） |
-| `backend/tests/` | 31 項測試（本機 PostgreSQL 16） |
+| `backend/tests/` | 34 項測試（本機 PostgreSQL 16） |
 | `frontend/` | 人員介面 |
 
 ## 登入

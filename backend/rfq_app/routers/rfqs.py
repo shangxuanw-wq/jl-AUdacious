@@ -16,7 +16,7 @@ from sqlalchemy import text
 from .. import config, db, payload as pl
 from ..auth import require_user
 from ..dispatcher import TERMINAL
-from ..queue_worker import enqueue
+from ..queue_worker import enqueue, sweep
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 TPE = ZoneInfo("Asia/Taipei")
@@ -412,3 +412,9 @@ async def requeue(dispatch_id: int) -> dict:
         await conn.execute(text("UPDATE rfq.quote_dispatches SET next_attempt_at=now(), updated_at=now() WHERE id=:id"), {"id": dispatch_id})
     state = await enqueue(dispatch_id, key=f"requeue-{int(time.time())}")
     return {"dispatch_id": dispatch_id, "enqueue": state}
+
+
+@router.post("/dispatches/sweep")
+async def sweep_due() -> dict:
+    """人員介面在有送出中的報價時呼叫：把到期該重送的處理掉（佇列沒推送時的備援）。"""
+    return {"processed": await sweep(limit=10)}

@@ -170,8 +170,10 @@ async def run(key: str = Query(""), scenario: str = Query("happy"), wait: int = 
 
 
 @router.get("/status")
-async def status(key: str = Query(""), quote_id: int = Query(...)) -> dict:
+async def status(key: str = Query(""), quote_id: int = Query(...), sweep: bool = Query(False)) -> dict:
     _check_key(key)
     async with _client() as c:
+        if sweep:
+            _expect(await c.post("/api/dispatches/sweep"), 200, "sweep")
         q = _expect(await c.get(f"/api/quotes/{quote_id}"), 200, "get_quote")
     return _summary(q)

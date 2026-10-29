@@ -21,7 +21,8 @@ export default function QuoteDetail({ cfg }) {
   const active = q?.dispatches?.some((d) => ACTIVE.has(d.status))
   useEffect(() => {
     if (!active) return
-    const t = setInterval(load, 5000)
+    // 佇列沒推送時的備援：順便請後端處理到期的重送
+    const t = setInterval(() => api('/dispatches/sweep', { method: 'POST' }).catch(() => {}).finally(load), 5000)
     return () => clearInterval(t)
   }, [active, load])
 

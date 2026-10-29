@@ -6,11 +6,11 @@ import logging
 import secrets
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from rfq_app import config, db
+from rfq_app import config, db, queue_worker
 from rfq_app.auth import router as auth_router
 from rfq_app.mock_aud.routes import admin as mock_admin_router
 from rfq_app.mock_aud.routes import router as mock_router
@@ -28,6 +28,20 @@ async def ensure_api_prefix(request: Request, call_next):
     path = request.scope.get("path", "")
     if not path.startswith("/api/") and path != "/api":
         request.scope["path"] = "/api" + (path if path.startswith("/") else "/" + path)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def queue_push(request: Request, call_next):
+    # Vercel Queues 推送：不論推到哪個路徑，都交給佇列 SDK 處理（認證資訊在推送的標頭裡）
+    if request.headers.get("ce-type") == queue_worker.PUSH_EVENT_TYPE:
+        body = await request.body()
+        try:
+            await queue_worker.accept_push(body, request.headers)
+        except Exception:  # noqa: BLE001
+            logging.getLogger("rfq.queue").exception("queue push failed (path %s)", request.url.path)
+            return Response(status_code=500)
+        return Response(status_code=200)
     return await call_next(request)
 
 
@@ -70,6 +84,15 @@ async def health() -> dict:
         "mock_token_configured": len(s.mock_aud_token) >= 24,
         "on_vercel": s.on_vercel,
     }
+
+
+@app.get("/api/cron/sweep")
+async def cron_sweep(request: Request) -> dict:
+    # Vercel Cron 會帶 Authorization: Bearer $CRON_SECRET
+    secret = config.settings.cron_secret
+    if len(secret) < 16 or not secrets.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return {"processed": await queue_worker.sweep()}
 
 
 @app.exception_handler(RuntimeError)

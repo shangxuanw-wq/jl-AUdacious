@@ -101,3 +101,39 @@ async def test_selftest_happy_internal_mock_duplicate(client, key_login, monkeyp
     assert j["ok"] is True, j
     dup = [s for s in j["steps"] if s["step"] == "duplicate_resend"]
     assert dup == [{"step": "duplicate_resend", "http": 200, "outcome": "duplicate"}]
+
+
+async def test_sweep_processes_due_retry(client, key_login):
+    from sqlalchemy import text
+
+    from rfq_app import db
+
+    j = (await client.get("/api/selftest/run", params={"key": SELFTEST_KEY, "scenario": "retry", "wait": 0})).json()
+    d = j["result"]["dispatch"]
+    assert d["status"] == "retry_wait"
+    # 還沒到期：sweep 不動它
+    st = (await client.get("/api/selftest/status", params={"key": SELFTEST_KEY, "quote_id": j["result"]["quote_id"], "sweep": True})).json()
+    assert st["dispatch"]["status"] == "retry_wait" and st["dispatch"]["attempt_count"] == 1
+    async with db.tx() as conn:
+        await conn.execute(text("UPDATE rfq.quote_dispatches SET next_attempt_at = now() - interval '1 second' WHERE id=:id"), {"id": d["id"]})
+    st = (await client.get("/api/selftest/status", params={"key": SELFTEST_KEY, "quote_id": j["result"]["quote_id"], "sweep": True})).json()
+    assert st["dispatch"]["status"] == "accepted" and st["dispatch"]["attempt_count"] == 2
+    assert st["quote_status"] == "sent"
+
+
+async def test_cron_requires_secret(client, monkeypatch):
+    assert (await client.get("/api/cron/sweep")).status_code == 404
+    monkeypatch.setenv("CRON_SECRET", "cron-secret-0123456789")
+    config.reload_settings()
+    try:
+        assert (await client.get("/api/cron/sweep", headers={"Authorization": "Bearer wrong"})).status_code == 404
+        r = await client.get("/api/cron/sweep", headers={"Authorization": "Bearer cron-secret-0123456789"})
+        assert r.status_code == 200 and r.json() == {"processed": []}
+    finally:
+        monkeypatch.undo()
+        config.reload_settings()
+
+
+async def test_fake_queue_push_is_rejected(client):
+    r = await client.post("/api/anything", headers={"ce-type": "com.vercel.queue.v2beta"}, content=b"{}")
+    assert r.status_code == 500  # 沒有有效的推送標頭 → SDK 拒絕，不會處理任何送出紀錄

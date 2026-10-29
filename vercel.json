@@ -3,16 +3,48 @@
   "services": {
     "web": {
       "root": "frontend/",
-      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ]
     },
     "api": {
       "root": "backend/",
       "entrypoint": "main:app",
-      "functions": { "main.py": { "maxDuration": 90 } }
+      "functions": {
+        "main.py": {
+          "maxDuration": 90,
+          "experimentalTriggers": [
+            {
+              "type": "queue/v2beta",
+              "topic": "quote-dispatch",
+              "retryAfterSeconds": 60
+            }
+          ]
+        }
+      }
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": { "service": "api" } },
-    { "source": "/(.*)", "destination": { "service": "web" } }
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/sweep",
+      "schedule": "7 1 * * *"
+    }
   ]
 }

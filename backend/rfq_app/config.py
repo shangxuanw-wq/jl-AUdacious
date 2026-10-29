@@ -32,6 +32,7 @@ class Settings:
     dev_login_email: str
     access_key: str
     selftest_key: str
+    cron_secret: str
 
     @property
     def worker_enabled(self) -> bool:
@@ -74,6 +75,7 @@ def load_settings() -> Settings:
         dev_login_email="" if _env("VERCEL") else _env("RFQ_DEV_LOGIN_EMAIL").lower(),
         access_key=_env("APP_ACCESS_KEY"),
         selftest_key=_env("SELFTEST_KEY"),
+        cron_secret=_env("CRON_SECRET"),
     )
 
 
