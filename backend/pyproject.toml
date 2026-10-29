@@ -1,0 +1,18 @@
+[project]
+name = "jl-audacious-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.162.0",
+    "sqlalchemy[asyncio]==2.1.6",
+    "asyncpg==0.32.0",
+    "httpx==0.28.1",
+    "itsdangerous==2.2.0",
+    "vercel==0.12.1",
+]
+
+[tool.vercel]
+entrypoint = "main:app"
+
+[[tool.vercel.subscribers]]
+entrypoint = "rfq_app.queue_worker"
