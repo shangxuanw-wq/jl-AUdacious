@@ -35,6 +35,7 @@ class Settings:
     cron_secret: str
     inline_retry_seconds: float
     mail_reply_mode: str
+    aud_trial_token: str
     mail_token_key: str
     rfq_mailbox: str
     rfq_sender_allow: frozenset[str]
@@ -88,6 +89,8 @@ def load_settings() -> Settings:
         # 送出當下就地重試（2、5、15 秒）最多花多久；超過就交給背景
         # 報價回信寄給誰：live（承辦人）／self（只寄給自己）／off；空的＝送正式站時 live，其他 self
         mail_reply_mode=_env("RFQ_MAIL_REPLY").lower(),
+        # 試跑步驟 1（澳得仕 trial.py 的雲端版）用的 token；跟正式送出的 AUD_QUOTE_API_TOKEN 分開
+        aud_trial_token=_env("AUD_TRIAL_TOKEN"),
         inline_retry_seconds=float(_env("RFQ_INLINE_RETRY_SECONDS", "45") or 45),
         mail_token_key=_env("MAIL_TOKEN_KEY"),
         rfq_mailbox=(_env("RFQ_MAILBOX", "jl-jimmy@jauhlirn.com") or "jl-jimmy@jauhlirn.com").lower(),

@@ -177,3 +177,27 @@ async def status(key: str = Query(""), quote_id: int = Query(...), sweep: bool =
             _expect(await c.post("/api/dispatches/sweep"), 200, "sweep")
         q = _expect(await c.get(f"/api/quotes/{quote_id}"), 200, "get_quote")
     return _summary(q)
+
+
+@router.get("/partner-trial")
+async def partner_trial(
+    key: str = Query(""),
+    rfq: str = Query(...),
+    rfq_revision: int = Query(1, ge=1),
+    item: str = Query(..., max_length=120),
+    material: str = Query(..., max_length=120),
+    qty: int = Query(..., ge=1, le=100000),
+    unit: str = Query("pcs", pattern="^(pcs|sets)$"),
+    group: str = Query("a", pattern="^(a|ab)$"),
+) -> dict:
+    """澳得仕 trial.py 的雲端版（試跑步驟 1）。group=a 只跑不寫入的 6 項；group=ab 才會寫入測試單。"""
+    _check_key(key)
+    from . import partner_trial
+    from .mail.parser import FULL_RFQ_RE
+
+    if not FULL_RFQ_RE.match(rfq):
+        raise HTTPException(400, "rfq 要像 AUD-RFQ-2026-0001")
+    try:
+        return await partner_trial.run(rfq=rfq, rfq_revision=rfq_revision, item=item, material=material, qty=qty, unit=unit, include_b=group == "ab")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))

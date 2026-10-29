@@ -1,3 +1,4 @@
+import json
 import httpx
 import pytest
 
@@ -137,3 +138,65 @@ async def test_cron_requires_secret(client, monkeypatch):
 async def test_fake_queue_push_is_rejected(client):
     r = await client.post("/api/anything", headers={"ce-type": "com.vercel.queue.v2beta"}, content=b"{}")
     assert r.status_code == 500  # 沒有有效的推送標頭 → SDK 拒絕，不會處理任何送出紀錄
+
+
+async def test_partner_trial_cloud(client, key_login, monkeypatch):
+    """用假的澳得仕回應跑完 13 項；確認 token 不會出現在結果裡、group=a 不寫入。"""
+    import httpx as _httpx
+
+    from rfq_app import partner_trial
+
+    TRIAL_TOKEN = "trial-token-0123456789abcdef"
+    monkeypatch.setenv("AUD_TRIAL_TOKEN", TRIAL_TOKEN)
+    config.reload_settings()
+    seen = []
+    cid = "11111111-2222-3333-4444-555555555555"
+    events = {}
+
+    def handler(req: _httpx.Request):
+        rid = req.headers.get("x-request-id", "r")
+        env = {"contract_version": "2026-10-29.5", "request_id": rid}
+        hdr = {"X-Request-Id": rid}
+        seen.append((req.method, dict(req.headers)))
+        if req.method == "GET":
+            return _httpx.Response(200, json={"enabled": True, "contract_version": "2026-10-29.5", "writes_enabled": True, "fields": [{"field": "rfq_revision"}]})
+        if req.headers.get("authorization") != f"Bearer {TRIAL_TOKEN}":
+            return _httpx.Response(401, json={**env, "error": "未授權"}, headers=hdr)
+        if not req.headers.get("content-type", "").startswith("application/json"):
+            return _httpx.Response(415, json={**env, "error": "Content-Type"}, headers=hdr)
+        b = json.loads(req.content)
+        if b.get("rfq") == "RFQ-1":
+            return _httpx.Response(400, json={**env, "error": "x", "issues": [{"code": "rfq_invalid"}]}, headers=hdr)
+        if b.get("rfq") == "AUD-RFQ-0000-0000":
+            return _httpx.Response(404, json={**env, "error": "找不到"}, headers=hdr)
+        if isinstance(b["items"][0]["unit_price"], str):
+            return _httpx.Response(400, json={**env, "error": "x", "issues": [{"code": "invalid_number", "field": "items[0].unit_price"}]}, headers=hdr)
+        assert req.headers.get("x-self-test") == "1"
+        if b["rfq_revision"] == 99:
+            return _httpx.Response(409, json={**env, "error": "x", "code": "rfq_revision_unknown"}, headers=hdr)
+        ev = b["event_id"]
+        body = json.dumps(b, sort_keys=True)
+        if ev in events:
+            if events[ev] == body:
+                return _httpx.Response(200, json={**env, "ok": True, "outcome": "duplicate", "candidate_id": cid, "status": "pending"}, headers=hdr)
+            return _httpx.Response(409, json={**env, "error": "x", "code": "event_conflict"}, headers=hdr)
+        events[ev] = body
+        issues = []
+        if ev.endswith("b4"):
+            issues.append({"code": "revision_reused"})
+        if ev.endswith("b6"):
+            issues.append({"code": "item_mismatch", "field": "part", "got": b["items"][0]["part"]})
+        return _httpx.Response(202, json={**env, "ok": True, "outcome": "pending_review", "rfq": b["rfq"], "candidate_id": cid if ev.endswith("b1") else f"99999999-2222-3333-4444-{len(events):012d}", "spec_revision": b["rfq_revision"], "issues": issues}, headers=hdr)
+
+    monkeypatch.setattr(partner_trial, "client_factory", lambda: _httpx.AsyncClient(transport=_httpx.MockTransport(handler)))
+    params = {"key": SELFTEST_KEY, "rfq": "AUD-RFQ-2026-0100", "rfq_revision": 1, "item": "工件 AUD-RFQ-2026-0100-1", "material": "PLA", "qty": 1}
+    r = await client.get("/api/selftest/partner-trial", params=params)
+    j = r.json()
+    assert r.status_code == 200 and j["ok"] and j["total"] == 6 and j["b_note"]
+    assert not any(h.get("x-self-test") for _, h in seen)
+    r = await client.get("/api/selftest/partner-trial", params={**params, "group": "ab"})
+    j = r.json()
+    assert j["ok"] is True and j["passed"] == 13, j["summary"]
+    assert TRIAL_TOKEN not in r.text
+    monkeypatch.undo()
+    config.reload_settings()
