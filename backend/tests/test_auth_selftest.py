@@ -128,7 +128,7 @@ async def test_cron_requires_secret(client, monkeypatch):
     try:
         assert (await client.get("/api/cron/sweep", headers={"Authorization": "Bearer wrong"})).status_code == 404
         r = await client.get("/api/cron/sweep", headers={"Authorization": "Bearer cron-secret-0123456789"})
-        assert r.status_code == 200 and r.json() == {"processed": []}
+        assert r.status_code == 200 and r.json()["processed"] == []
     finally:
         monkeypatch.undo()
         config.reload_settings()

@@ -42,10 +42,33 @@ export default function RfqDetail({ cfg }) {
         <Field label="品名" value={rfq.item_name} wide />
         <Field label="材質" value={rfq.material_text} />
         <Field label="數量" value={`${rfq.quantity} ${rfq.unit}`} />
-        <Field label="需求日" value={rfq.need_date || '請報交期'} />
-        <Field label="來源" value={rfq.source === 'email' ? '詢價信' : '手動建立'} />
-        <Field label="建立者" value={rfq.created_by || '—'} />
+        <Field label="需求日" value={rfq.need_date || rfq.need_date_text || '請報交期'} />
+        <Field label="來源" value={rfq.source === 'email' ? `詢價信（${rfq.mail_count} 封）` : '手動建立'} />
+        <Field label="聯絡人" value={rfq.contact_name ? `${rfq.contact_name}${rfq.contact_email ? ` <${rfq.contact_email}>` : ''}` : '—'} wide />
+        <Field label="回覆給（Reply-To）" value={rfq.reply_to || '—'} />
+        <Field label="建立者" value={rfq.created_by === 'mail' ? '系統（收信）' : rfq.created_by || '—'} />
       </section>
+
+      {(rfq.spec_text || data.attachments?.length > 0) && (
+        <section className="card grid gap-4 p-5 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <div className="label">規格與備註</div>
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{rfq.spec_text || '—'}</pre>
+          </div>
+          <div>
+            <div className="label">附件（最新一封信）</div>
+            {data.attachments.length === 0 && <p className="text-sm text-stone-500">無</p>}
+            <ul className="space-y-1 text-sm">
+              {data.attachments.map((a) => (
+                <li key={a.n}>
+                  <a className="text-accent-dark hover:underline" href={`/api/rfqs/${rfq.id}/attachments/${a.n}`}>{a.filename}</a>
+                  <span className="ml-1 text-xs text-stone-500">{a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">

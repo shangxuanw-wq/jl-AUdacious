@@ -38,8 +38,16 @@
 | `backend/rfq_app/mock_aud/` | 假澳得仕（行為對照澳得仕原始碼） |
 | `backend/sql/` | 資料表 migration（已套用到 Supabase） |
 | `backend/rfq_app/selftest.py` | 雲端自我測試（只送假澳得仕） |
-| `backend/tests/` | 34 項測試（本機 PostgreSQL 16） |
+| `backend/tests/` | 48 項測試（本機 PostgreSQL 16） |
 | `frontend/` | 人員介面 |
+
+## 收詢價信
+
+- 「信箱」頁按「連接」→ 用 `RFQ_MAILBOX`（預設 jl-jimmy@jauhlirn.com）授權 Google（`gmail.modify`）。refresh token 用 `MAIL_TOKEN_KEY` 加密存在 `rfq.mailboxes`。
+- 每分鐘的 `/api/cron/sweep` 會順便收信：`subject:AUD-RFQ -from:me newer_than:30d`，用 `rfq.inbound_messages` 記住處理過哪些信，不改信箱內容。
+- 解析照契約 3.2（`rfq_app/mail/parser.py`）；同一詢價編號再寄 → 更新同一張單、以最新一封為準；已結案不動。
+- 附件不另存，下載時即時向 Gmail 取（要登入）。
+- `RFQ_SENDER_ALLOW`：只收這些寄件人（信箱或 `@網域`，逗號分隔）；空的 = 不限制。
 
 ## 登入
 

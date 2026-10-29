@@ -223,7 +223,20 @@ async def get_rfq(rfq_id: int) -> dict:
             v["latest_dispatch"] = _plain(dict(d)) if d else None
             out.append(v)
         mock = (await conn.execute(text("SELECT number FROM mock_partner.rfqs WHERE number=:n"), {"n": rfq["rfq_number"]})).scalar()
-        return {"rfq": _plain(rfq), "quotes": out, "in_mock": bool(mock)}
+        mails = [
+            _plain(dict(m))
+            for m in (
+                await conn.execute(
+                    text("SELECT id, subject, from_addr, reply_to, received_at, status, error, attachments FROM rfq.inbound_messages WHERE rfq_number=:n ORDER BY received_at DESC LIMIT 20"),
+                    {"n": rfq["rfq_number"]},
+                )
+            ).mappings()
+        ]
+        latest = next((m for m in mails if m["id"] == rfq.get("last_message_id")), None)
+        attachments = [{"n": i, "filename": a["filename"], "size": a.get("size", 0), "mime": a.get("mime")} for i, a in enumerate(latest["attachments"])] if latest else []
+        for m in mails:
+            m["attachment_count"] = len(m.pop("attachments") or [])
+        return {"rfq": _plain(rfq), "quotes": out, "in_mock": bool(mock), "attachments": attachments, "mails": mails}
 
 
 @router.post("/rfqs/{rfq_id}/quotes", status_code=201)

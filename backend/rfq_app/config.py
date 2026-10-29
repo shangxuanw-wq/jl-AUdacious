@@ -33,6 +33,9 @@ class Settings:
     access_key: str
     selftest_key: str
     cron_secret: str
+    mail_token_key: str
+    rfq_mailbox: str
+    rfq_sender_allow: frozenset[str]
 
     @property
     def worker_enabled(self) -> bool:
@@ -41,6 +44,10 @@ class Settings:
     @property
     def google_login_configured(self) -> bool:
         return bool(self.google_client_id and self.google_client_secret and self.session_secret and self.allowed_emails)
+
+    @property
+    def mail_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.mail_token_key and self.app_base_url)
 
     @property
     def key_login_configured(self) -> bool:
@@ -76,6 +83,10 @@ def load_settings() -> Settings:
         access_key=_env("APP_ACCESS_KEY"),
         selftest_key=_env("SELFTEST_KEY"),
         cron_secret=_env("CRON_SECRET"),
+        mail_token_key=_env("MAIL_TOKEN_KEY"),
+        rfq_mailbox=(_env("RFQ_MAILBOX", "jl-jimmy@jauhlirn.com") or "jl-jimmy@jauhlirn.com").lower(),
+        # 只收這些寄件人（完整信箱或 @網域），逗號分隔；空的 = 不限制
+        rfq_sender_allow=frozenset(e.strip().lower() for e in _env("RFQ_SENDER_ALLOW").split(",") if e.strip()),
     )
 
 

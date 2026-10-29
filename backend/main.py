@@ -16,6 +16,9 @@ from rfq_app.mock_aud.routes import admin as mock_admin_router
 from rfq_app.mock_aud.routes import router as mock_router
 from rfq_app.routers.rfqs import router as rfq_router
 from rfq_app.selftest import router as selftest_router
+from rfq_app.mail import ingest as mail_ingest
+from rfq_app.mail.routes import files as mail_files_router
+from rfq_app.mail.routes import router as mail_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -59,6 +62,8 @@ app.include_router(rfq_router)
 app.include_router(mock_router)
 app.include_router(mock_admin_router)
 app.include_router(selftest_router)
+app.include_router(mail_router)
+app.include_router(mail_files_router)
 
 
 @app.get("/api/health")
@@ -81,6 +86,7 @@ async def health() -> dict:
         "key_login": s.key_login_configured,
         "session_secret_set": bool(s.session_secret),
         "selftest_enabled": len(s.selftest_key) >= 24,
+        "mail_configured": s.mail_configured,
         "mock_token_configured": len(s.mock_aud_token) >= 24,
         "on_vercel": s.on_vercel,
     }
@@ -92,7 +98,13 @@ async def cron_sweep(request: Request) -> dict:
     secret = config.settings.cron_secret
     if len(secret) < 16 or not secrets.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
         return JSONResponse({"detail": "Not Found"}, status_code=404)
-    return {"processed": await queue_worker.sweep()}
+    out = {"processed": await queue_worker.sweep()}
+    if config.settings.mail_configured:
+        try:
+            out["mail"] = await mail_ingest.poll()
+        except Exception as e:  # noqa: BLE001 - 收信失敗不影響重送
+            out["mail"] = {"error": type(e).__name__}
+    return out
 
 
 @app.exception_handler(RuntimeError)

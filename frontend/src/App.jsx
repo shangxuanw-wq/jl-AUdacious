@@ -6,6 +6,7 @@ import RfqList from './pages/RfqList.jsx'
 import RfqDetail from './pages/RfqDetail.jsx'
 import QuoteDetail from './pages/QuoteDetail.jsx'
 import MockPanel from './pages/MockPanel.jsx'
+import Mail from './pages/Mail.jsx'
 
 export default function App() {
   const [me, setMe] = useState(undefined)
@@ -46,6 +47,7 @@ export default function App() {
           </Link>
           <nav className="flex gap-1">
             <NavLink to="/" end className={tab}>詢價單</NavLink>
+            <NavLink to="/mail" className={tab}>信箱</NavLink>
             <NavLink to="/mock" className={tab}>假澳得仕</NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-xs text-stone-500">
@@ -66,6 +68,7 @@ export default function App() {
           <Route path="/rfqs/:id" element={<RfqDetail cfg={cfg} />} />
           <Route path="/quotes/:id" element={<QuoteDetail cfg={cfg} />} />
           <Route path="/mock" element={<MockPanel />} />
+          <Route path="/mail" element={<Mail />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<div className="text-sm text-stone-500">找不到這個頁面</div>} />
         </Routes>

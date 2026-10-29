@@ -9,6 +9,7 @@ dependencies = [
     "httpx==0.28.1",
     "itsdangerous==2.2.0",
     "vercel==0.12.1",
+    "cryptography==46.0.3",
 ]
 
 [tool.vercel]
