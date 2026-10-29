@@ -90,7 +90,7 @@ def load_settings() -> Settings:
         # 報價回信寄給誰：live（承辦人）／self（只寄給自己）／off；空的＝送正式站時 live，其他 self
         mail_reply_mode=_env("RFQ_MAIL_REPLY").lower(),
         # 試跑步驟 1（澳得仕 trial.py 的雲端版）用的 token；跟正式送出的 AUD_QUOTE_API_TOKEN 分開
-        aud_trial_token=_env("AUD_TRIAL_TOKEN"),
+        aud_trial_token=_env("AUD_TRIAL_TOKEN") or _env("RFQ_WEBHOOK_TOKEN"),
         inline_retry_seconds=float(_env("RFQ_INLINE_RETRY_SECONDS", "45") or 45),
         mail_token_key=_env("MAIL_TOKEN_KEY"),
         rfq_mailbox=(_env("RFQ_MAILBOX", "jl-jimmy@jauhlirn.com") or "jl-jimmy@jauhlirn.com").lower(),
