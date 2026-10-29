@@ -352,3 +352,16 @@ async def test_mock_basic_errors(client):
         assert (await raw.post(url, content=big.encode(), headers={**h, "Content-Type": "application/json"})).status_code == 413
         r = await raw.post(url, json={"rfq": RFQ, "items": [{"qty": 1, "unit_price": "350", "lead_days": 1}]}, headers=h)
         assert r.status_code == 400 and r.json()["issues"][0]["code"] == "invalid_number"
+
+
+async def test_internal_mock_target(client):
+    config.settings = config.Settings(**{**config.settings.__dict__, "aud_quote_api_url": "internal-mock"})
+    dispatcher.client_factory = lambda: (_ for _ in ()).throw(AssertionError("不該走外部 client"))
+    try:
+        rfq = await make_rfq(client)
+        q = await make_quote(client, rfq["id"])
+        did = (await send(client, q["id"]))["dispatch_id"]
+        d = await dispatch_row(did)
+        assert d["target_url"] == "internal-mock" and d["status"] == "accepted"
+    finally:
+        config.reload_settings()

@@ -21,6 +21,7 @@ from . import config, db
 
 log = logging.getLogger("rfq.dispatcher")
 
+INTERNAL_MOCK = "internal-mock"  # AUD_QUOTE_API_URL 設成這個值 → 送到本 app 內的假澳得仕
 RETRY_DELAYS = [60, 300, 1800, 1800]
 MAX_ATTEMPTS = 5
 RETRYABLE_409 = {"event_in_flight", "send_pending"}
@@ -161,8 +162,17 @@ async def process_dispatch(dispatch_id: int, now: datetime | None = None) -> Pro
             "X-Request-Id": request_id,
         }
         try:
-            async with client_factory() as client:
-                r = await client.post(target_url, content=body_text.encode("utf-8"), headers=headers)
+            if target_url == INTERNAL_MOCK:
+                # 開發期：假澳得仕在同一個 app 裡，直接在程式內呼叫（不走公開網址、不受 Vercel 部署保護影響）
+                from main import app as _app
+
+                client_cm = httpx.AsyncClient(transport=httpx.ASGITransport(app=_app), base_url="http://internal", timeout=config.settings.http_timeout)
+                url = "/api/mock-aud/api/rfq/quotes"
+            else:
+                client_cm = client_factory()
+                url = target_url
+            async with client_cm as client:
+                r = await client.post(url, content=body_text.encode("utf-8"), headers=headers)
             http_status = r.status_code
             resp_text = r.text[:4000]
             try:
