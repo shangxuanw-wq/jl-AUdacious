@@ -1,12 +1,17 @@
-"""Google 登入＋白名單。Session 存在簽章 cookie（SESSION_SECRET）。"""
+"""登入：Google＋白名單；Google 還沒設定好之前，可以用臨時金鑰（APP_ACCESS_KEY）登入。
+
+Session 存在簽章 cookie（SESSION_SECRET）。
+"""
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import RedirectResponse
 
 from . import config
@@ -27,9 +32,22 @@ def current_email(request: Request) -> str | None:
     if s.dev_login_email:
         return s.dev_login_email
     email = request.session.get("email")
-    if email and email in s.allowed_emails:
+    if not email:
+        return None
+    if request.session.get("via") == "key":
+        # 金鑰登入：金鑰換掉或拿掉後，舊的登入就失效
+        if s.key_login_configured and secrets.compare_digest(request.session.get("kf", ""), key_fingerprint(s.access_key)):
+            return email
+        return None
+    if email in s.allowed_emails:
         return email
     return None
+
+
+def key_fingerprint(key: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(("rfq-key:" + key).encode()).hexdigest()[:16]
 
 
 def require_user(request: Request) -> str:
@@ -44,8 +62,29 @@ async def me(request: Request) -> dict:
     s = config.settings
     return {
         "email": current_email(request),
-        "login_configured": bool(s.google_client_id and s.google_client_secret and s.session_secret and s.allowed_emails),
+        "login_configured": s.google_login_configured or s.key_login_configured,
+        "google_login": s.google_login_configured,
+        "key_login": s.key_login_configured,
     }
+
+
+class KeyLogin(BaseModel):
+    key: str = Field(min_length=1, max_length=200)
+    name: str = Field(default="", max_length=40)
+
+
+@router.post("/key")
+async def key_login(request: Request, body: KeyLogin) -> dict:
+    s = config.settings
+    if not s.key_login_configured:
+        raise HTTPException(404, "沒有開放金鑰登入")
+    if not secrets.compare_digest(body.key.strip().encode(), s.access_key.encode()):
+        await asyncio.sleep(1.0)  # 拖慢猜金鑰
+        raise HTTPException(401, "金鑰不對")
+    name = "".join(ch for ch in body.name.strip() if ch.isprintable())[:40] or "臨時登入"
+    request.session.clear()
+    request.session.update({"email": f"key:{name}", "via": "key", "kf": key_fingerprint(s.access_key)})
+    return {"email": f"key:{name}"}
 
 
 @router.get("/login")

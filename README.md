@@ -30,8 +30,24 @@
 | `backend/rfq_app/queue_worker.py` | Vercel Queues 消費者 |
 | `backend/rfq_app/mock_aud/` | 假澳得仕（行為對照澳得仕原始碼） |
 | `backend/sql/` | 資料表 migration（已套用到 Supabase） |
-| `backend/tests/` | 23 項測試（本機 PostgreSQL 16） |
+| `backend/rfq_app/selftest.py` | 雲端自我測試（只送假澳得仕） |
+| `backend/tests/` | 31 項測試（本機 PostgreSQL 16） |
 | `frontend/` | 人員介面 |
+
+## 登入
+
+- Google 登入＋白名單（`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`ALLOWED_EMAILS`）。
+- Google 還沒設好之前：臨時金鑰登入（`APP_ACCESS_KEY`，至少 24 字元）。換掉金鑰，所有用舊金鑰登入的 session 立刻失效；拿掉就關閉。
+- 外層還有 Vercel 部署保護（Vercel Authentication）。
+
+## 雲端自我測試
+
+設了 `SELFTEST_KEY`（至少 24 字元）才開放，驗證完請拿掉。
+送出目標不是假澳得仕時一律拒絕。
+
+- `GET /api/selftest/run?key=…&scenario=happy` 建詢價→報價→送出→202，再用同一 event_id 重送→200 duplicate
+- `scenario=retry`：第 1 次 503，約 60 秒後由佇列重送；用 `GET /api/selftest/status?key=…&quote_id=…` 看結果
+- 另有 `rate_limited`、`gave_up`
 
 ## 環境變數
 

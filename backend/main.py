@@ -15,6 +15,7 @@ from rfq_app.auth import router as auth_router
 from rfq_app.mock_aud.routes import admin as mock_admin_router
 from rfq_app.mock_aud.routes import router as mock_router
 from rfq_app.routers.rfqs import router as rfq_router
+from rfq_app.selftest import router as selftest_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -43,6 +44,7 @@ app.include_router(auth_router)
 app.include_router(rfq_router)
 app.include_router(mock_router)
 app.include_router(mock_admin_router)
+app.include_router(selftest_router)
 
 
 @app.get("/api/health")
@@ -60,7 +62,11 @@ async def health() -> dict:
         "db": db_ok,
         "db_error": db_error,
         "worker_enabled": s.worker_enabled,
-        "login_configured": bool(s.google_client_id and s.google_client_secret and s.session_secret and s.allowed_emails),
+        "login_configured": s.google_login_configured or s.key_login_configured,
+        "google_login": s.google_login_configured,
+        "key_login": s.key_login_configured,
+        "session_secret_set": bool(s.session_secret),
+        "selftest_enabled": len(s.selftest_key) >= 24,
         "mock_token_configured": len(s.mock_aud_token) >= 24,
         "on_vercel": s.on_vercel,
     }

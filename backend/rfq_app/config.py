@@ -30,10 +30,21 @@ class Settings:
     sending_stale_seconds: int
     on_vercel: bool
     dev_login_email: str
+    access_key: str
+    selftest_key: str
 
     @property
     def worker_enabled(self) -> bool:
         return bool(self.aud_quote_api_url and self.aud_quote_api_token)
+
+    @property
+    def google_login_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.session_secret and self.allowed_emails)
+
+    @property
+    def key_login_configured(self) -> bool:
+        # 臨時登入：Google 還沒設定好之前用。金鑰太短一律不啟用
+        return bool(self.session_secret and len(self.access_key) >= 24)
 
     @property
     def target_is_partner_prod(self) -> bool:
@@ -61,6 +72,8 @@ def load_settings() -> Settings:
         on_vercel=bool(_env("VERCEL")),
         # 只在本機測試用；在 Vercel 上一律忽略
         dev_login_email="" if _env("VERCEL") else _env("RFQ_DEV_LOGIN_EMAIL").lower(),
+        access_key=_env("APP_ACCESS_KEY"),
+        selftest_key=_env("SELFTEST_KEY"),
     )
 
 
