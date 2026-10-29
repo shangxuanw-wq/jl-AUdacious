@@ -21,7 +21,10 @@
   狀態以資料庫為準（`next_attempt_at`），由三條路觸發，誰先到都一樣：
   1. Vercel Queues 延遲訊息（topic `quote-dispatch`，推送由 `main.py` 中介層交給 SDK）
   2. 人員介面開著送出中的報價時，每 5 秒呼叫 `POST /api/dispatches/sweep`
-  3. 每天一次的 Vercel Cron `/api/cron/sweep`（`CRON_SECRET`）
+  3. **Supabase pg_cron 每分鐘**呼叫 `https://rfq.jauhlirn.com/api/cron/sweep`（密鑰存在 Supabase Vault `rfq_cron_secret`，排程名 `rfq-sweep-every-minute`）
+  4. 每天一次的 Vercel Cron（保險）
+- Vercel Queues 的 Python 推送在多服務架構下沒有觸發（2026-10-29 實測），目前送訊息但不依賴它。
+- 網址：`https://rfq.jauhlirn.com`（自訂網域不受 Vercel 部署保護，靠 app 自己的登入）；`jl-audacious.vercel.app` 仍有 Vercel 部署保護。
 - 防呆：沒設 `RFQ_ALLOW_PARTNER_PROD=true` 時，送往 `audacious-3d-studio.vercel.app` 一律擋下。
 
 ## 目錄
