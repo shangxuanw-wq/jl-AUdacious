@@ -71,7 +71,7 @@ export default function Mail({ me }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-black">信箱</h1>
-        <p className="mt-1 text-sm text-stone-500">連接 <span className="font-mono">{s.expected_mailbox}</span> 後，系統每分鐘讀一次主旨含 AUD-RFQ 的新信，自動建立或更新詢價單。只讀，不會改信箱內容。</p>
+        <p className="mt-1 text-sm text-stone-500">收到詢價信會自動建立詢價單。</p>
       </div>
       {params.get('connected') && <p className="notice">信箱已連接。</p>}
       {connErr && (
