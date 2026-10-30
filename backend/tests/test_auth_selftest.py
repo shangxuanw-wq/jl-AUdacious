@@ -25,7 +25,7 @@ def key_login(monkeypatch):
 async def test_key_login_flow(client, key_login):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as c:
         me = (await c.get("/api/auth/me")).json()
-        assert me == {"email": None, "login_configured": True, "google_login": False, "key_login": True}
+        assert me == {"email": None, "role": None, "name": "", "login_configured": True, "google_login": False, "key_login": True}
         assert (await c.get("/api/rfqs")).status_code == 401
 
         r = await c.post("/api/auth/key", json={"key": "wrong-key"})

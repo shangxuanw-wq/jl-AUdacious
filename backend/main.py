@@ -14,6 +14,7 @@ from rfq_app import config, db, queue_worker
 from rfq_app.auth import router as auth_router
 from rfq_app.mock_aud.routes import admin as mock_admin_router
 from rfq_app.mock_aud.routes import router as mock_router
+from rfq_app.routers.admin import router as admin_router
 from rfq_app.routers.rfqs import router as rfq_router
 from rfq_app.selftest import router as selftest_router
 from rfq_app.mail import ingest as mail_ingest
@@ -59,6 +60,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(rfq_router)
+app.include_router(admin_router)
 app.include_router(mock_router)
 app.include_router(mock_admin_router)
 

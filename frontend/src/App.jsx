@@ -7,6 +7,7 @@ import RfqDetail from './pages/RfqDetail.jsx'
 import QuoteDetail from './pages/QuoteDetail.jsx'
 import MockPanel from './pages/MockPanel.jsx'
 import Mail from './pages/Mail.jsx'
+import Members, { ROLE_INFO } from './pages/Members.jsx'
 
 export default function App() {
   const [me, setMe] = useState(undefined)
@@ -48,11 +49,13 @@ export default function App() {
           <nav className="flex gap-1">
             <NavLink to="/" end className={tab}>詢價單</NavLink>
             <NavLink to="/mail" className={tab}>信箱</NavLink>
+            {me.role === 'admin' && <NavLink to="/members" className={tab}>成員</NavLink>}
             {cfg?.mock_enabled && <NavLink to="/mock" className={tab}>模擬對方</NavLink>}
           </nav>
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             {cfg && !cfg.target_is_partner_prod && <span className="chip-hot">測試環境</span>}
-            <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-accent text-[13px] font-bold uppercase text-white" title={me.email} aria-label={me.email}>
+            {me.role === 'viewer' && <span className="chip-line">唯讀</span>}
+            <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-accent text-[13px] font-bold uppercase text-white" title={`${me.name ? me.name + '・' : ''}${me.email}（${ROLE_INFO[me.role]?.label || ''}）`} aria-label={me.email}>
               {(me.email || '?').replace(/^key:/, '').slice(0, 1)}
             </span>
             <button className="btn-ghost btn-sm" onClick={logout}>登出</button>
@@ -61,11 +64,12 @@ export default function App() {
       </header>
       <main className="mx-auto max-w-[1680px] px-4 pb-12 pt-6 sm:px-6 xl:px-10">
         <Routes>
-          <Route path="/" element={<RfqList cfg={cfg} />} />
-          <Route path="/rfqs/:id" element={<RfqDetail cfg={cfg} />} />
-          <Route path="/quotes/:id" element={<QuoteDetail cfg={cfg} />} />
+          <Route path="/" element={<RfqList cfg={cfg} me={me} />} />
+          <Route path="/rfqs/:id" element={<RfqDetail cfg={cfg} me={me} />} />
+          <Route path="/quotes/:id" element={<QuoteDetail cfg={cfg} me={me} />} />
           {cfg?.mock_enabled && <Route path="/mock" element={<MockPanel />} />}
-          <Route path="/mail" element={<Mail />} />
+          <Route path="/mail" element={<Mail me={me} />} />
+          {me.role === 'admin' && <Route path="/members" element={<Members me={me} />} />}
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<div className="text-sm text-stone-500">找不到這個頁面</div>} />
         </Routes>

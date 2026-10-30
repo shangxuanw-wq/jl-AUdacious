@@ -38,7 +38,9 @@ const CONNECT_ERRORS = {
 
 const reason = (e) => (e ? e.split(',').map((x) => REASONS[x] || x).join('、') : '')
 
-export default function Mail() {
+export default function Mail({ me }) {
+  const isAdmin = me?.role === 'admin'
+  const canEdit = me?.role !== 'viewer'
   const [params] = useSearchParams()
   const [s, setS] = useState(null)
   const [error, setError] = useState('')
@@ -88,8 +90,8 @@ export default function Mail() {
               <span className="font-mono text-sm">{box.email}</span>
               <span className="text-xs text-stone-500">由 {box.connected_by || '—'} 於 {dt(box.connected_at)} 連接</span>
               <div className="ml-auto flex gap-2">
-                <button className="btn-primary" disabled={busy} onClick={() => act(async () => setLast(await api('/gmail/poll', { method: 'POST' })))}>{busy ? '收信中…' : '立即收信'}</button>
-                <button className="btn-ghost" disabled={busy} onClick={() => window.confirm('中斷後系統就不會再讀這個信箱，確定？') && act(() => api('/gmail/disconnect', { method: 'POST' }))}>中斷連接</button>
+                {canEdit && <button className="btn-primary" disabled={busy} onClick={() => act(async () => setLast(await api('/gmail/poll', { method: 'POST' })))}>{busy ? '收信中…' : '立即收信'}</button>}
+                {isAdmin && <button className="btn-ghost" disabled={busy} onClick={() => window.confirm('中斷後系統就不會再讀這個信箱，確定？') && act(() => api('/gmail/disconnect', { method: 'POST' }))}>中斷連接</button>}
               </div>
             </div>
             <p className="text-xs text-stone-500">
@@ -99,7 +101,7 @@ export default function Mail() {
             {box.last_error && (
               <p className="error">
                 收信失敗：{box.last_error}{box.last_error.startsWith('auth:') && '（授權失效，請重新連接）'}
-                {box.last_error.startsWith('auth:') && <a className="ml-2 underline" href="/api/gmail/connect">重新連接</a>}
+                {isAdmin && box.last_error.startsWith('auth:') && <a className="ml-2 underline" href="/api/gmail/connect">重新連接</a>}
               </p>
             )}
             {last && <p className="text-xs text-stone-500">剛剛收到 {last.new} 封新信。</p>}
@@ -107,7 +109,11 @@ export default function Mail() {
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm text-stone-600">還沒連接信箱。</span>
-            <a className={`btn-primary ${!s.configured ? 'pointer-events-none opacity-50' : ''}`} href="/api/gmail/connect">連接 {s.expected_mailbox}</a>
+            {isAdmin ? (
+              <a className={`btn-primary ${!s.configured ? 'pointer-events-none opacity-50' : ''}`} href="/api/gmail/connect">連接 {s.expected_mailbox}</a>
+            ) : (
+              <span className="text-sm text-stone-500">請管理員連接信箱。</span>
+            )}
             <span className="text-xs text-stone-500">會跳到 Google，請用這個信箱登入並允許。</span>
           </div>
         )}

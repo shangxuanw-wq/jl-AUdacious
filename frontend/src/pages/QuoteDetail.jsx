@@ -8,7 +8,7 @@ import QuoteForm from './QuoteForm.jsx'
 const ACTIVE = new Set(['pending', 'sending', 'retry_wait'])
 const OK = new Set(['accepted', 'duplicate', 'published'])
 
-export default function QuoteDetail({ cfg }) {
+export default function QuoteDetail({ cfg, me }) {
   const { id } = useParams()
   const nav = useNavigate()
   const [q, setQ] = useState(null)
@@ -24,13 +24,14 @@ export default function QuoteDetail({ cfg }) {
     load()
   }, [load])
 
+  const canEdit = me?.role !== 'viewer'
   const active = q?.dispatches?.some((d) => ACTIVE.has(d.status))
   useEffect(() => {
     if (!active) return
     // 佇列沒推送時的備援：順便請後端處理到期的重送
-    const t = setInterval(() => api('/dispatches/sweep', { method: 'POST' }).catch(() => {}).finally(load), 5000)
+    const t = setInterval(() => (canEdit ? api('/dispatches/sweep', { method: 'POST' }).catch(() => {}) : Promise.resolve()).finally(load), 5000)
     return () => clearInterval(t)
-  }, [active, load])
+  }, [active, load, canEdit])
 
   if (error && !q) return <p className="error">{error}</p>
   if (!q) return <p className="text-sm text-stone-500">載入中…</p>
@@ -111,11 +112,11 @@ export default function QuoteDetail({ cfg }) {
         </div>
         <div className="flex flex-wrap gap-2.5">
           <a className="btn-ghost" href={`/api/quotes/${id}/pdf`} target="_blank" rel="noreferrer"><Doc />報價單 PDF</a>
-          {q.status === 'draft' && mode === null && <button className="btn-ghost" onClick={() => setMode('edit')}>修改草稿</button>}
-          {['draft', 'failed'].includes(q.status) && mode === null && (
+          {canEdit && q.status === 'draft' && mode === null && <button className="btn-ghost" onClick={() => setMode('edit')}>修改草稿</button>}
+          {canEdit && ['draft', 'failed'].includes(q.status) && mode === null && (
             <button className="btn-primary" onClick={doSend} disabled={busy || !q.payload_preview}>{busy ? '送出中…' : '送出報價'}</button>
           )}
-          {isLatest && ['sent', 'failed'].includes(q.status) && mode === null && (
+          {canEdit && isLatest && ['sent', 'failed'].includes(q.status) && mode === null && (
             <button className={q.status === 'sent' ? 'btn-primary' : 'btn-ghost'} onClick={() => setMode('revise')}>修訂成 r{q.quote_revision + 1}</button>
           )}
         </div>
@@ -174,7 +175,7 @@ export default function QuoteDetail({ cfg }) {
             <section className="card animate-rise p-5" style={{ animationDelay: '.18s' }}>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-base font-bold">回信</h2>
-                {q.status !== 'draft' && q.has_source_mail && q.reply_mode !== 'off' && (
+                {canEdit && q.status !== 'draft' && q.has_source_mail && q.reply_mode !== 'off' && (
                   <button className="btn-ghost btn-sm" onClick={resendMail} disabled={busy}>{mail ? '重寄' : '寄出'}</button>
                 )}
               </div>
@@ -200,7 +201,7 @@ export default function QuoteDetail({ cfg }) {
             <section className="card animate-rise p-5" style={{ animationDelay: '.24s' }}>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-base font-bold">對方系統</h2>
-                {d && ACTIVE.has(d.status) && (
+                {canEdit && d && ACTIVE.has(d.status) && (
                   <button className="btn-ghost btn-sm" onClick={() => run(() => api(`/dispatches/${d.id}/requeue`, { method: 'POST' }))} disabled={busy}>立即重送</button>
                 )}
               </div>

@@ -19,6 +19,8 @@ class Settings:
     session_secret: str
     google_client_id: str
     google_client_secret: str
+    login_client_id: str
+    login_client_secret: str
     allowed_emails: frozenset[str]
     app_base_url: str
     aud_quote_api_url: str
@@ -30,6 +32,7 @@ class Settings:
     sending_stale_seconds: int
     on_vercel: bool
     dev_login_email: str
+    dev_login_role: str
     access_key: str
     selftest_key: str
     cron_secret: str
@@ -56,7 +59,7 @@ class Settings:
 
     @property
     def google_login_configured(self) -> bool:
-        return bool(self.google_client_id and self.google_client_secret and self.session_secret and self.allowed_emails)
+        return bool(self.login_client_id and self.login_client_secret and self.session_secret and self.allowed_emails)
 
     @property
     def mail_configured(self) -> bool:
@@ -81,6 +84,9 @@ def load_settings() -> Settings:
         session_secret=_env("SESSION_SECRET"),
         google_client_id=_env("GOOGLE_CLIENT_ID"),
         google_client_secret=_env("GOOGLE_CLIENT_SECRET"),
+        # 登入用另一組 Google 應用（對外開放、只要 email），沒設就沿用收信那組
+        login_client_id=_env("LOGIN_GOOGLE_CLIENT_ID") or _env("GOOGLE_CLIENT_ID"),
+        login_client_secret=_env("LOGIN_GOOGLE_CLIENT_SECRET") or _env("GOOGLE_CLIENT_SECRET"),
         allowed_emails=frozenset(e.strip().lower() for e in _env("ALLOWED_EMAILS").split(",") if e.strip()),
         app_base_url=base.rstrip("/"),
         aud_quote_api_url=_env("AUD_QUOTE_API_URL"),
@@ -93,6 +99,7 @@ def load_settings() -> Settings:
         on_vercel=bool(_env("VERCEL")),
         # 只在本機測試用；在 Vercel 上一律忽略
         dev_login_email="" if _env("VERCEL") else _env("RFQ_DEV_LOGIN_EMAIL").lower(),
+        dev_login_role=_env("RFQ_DEV_LOGIN_ROLE", "admin"),
         access_key=_env("APP_ACCESS_KEY"),
         selftest_key=_env("SELFTEST_KEY"),
         cron_secret=_env("CRON_SECRET"),

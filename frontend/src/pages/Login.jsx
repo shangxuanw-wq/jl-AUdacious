@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 
 const ERRORS = {
-  not_allowed: '這個 Google 帳號不在白名單裡。',
+  not_allowed: '這個帳號沒有權限，請管理員把你加入名單。',
   oauth: '登入流程中斷，請再試一次。',
   token: 'Google 登入失敗，請再試一次。',
   userinfo: '讀不到 Google 帳號資料，請再試一次。',
@@ -35,7 +35,7 @@ export default function Login({ me }) {
       <div className="card w-full max-w-sm animate-rise p-8 text-center">
         <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-accent text-lg font-black text-white">JL</div>
         <h1 className="text-xl font-black">JL 估價中心</h1>
-        <p className="mt-1 text-sm text-stone-500">只有白名單內的帳號可以登入</p>
+        <p className="mt-1 text-sm text-stone-500">用 Google 帳號登入（需在名單內）</p>
         {err && <p className="error mt-4">{ERRORS[err] || '登入失敗'}</p>}
         {me?.google_login && <a href="/api/auth/login" className="btn-primary mt-6 w-full">用 Google 登入</a>}
         {me?.key_login && (

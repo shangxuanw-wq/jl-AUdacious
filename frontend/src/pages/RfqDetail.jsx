@@ -8,7 +8,7 @@ import QuoteForm from './QuoteForm.jsx'
 
 const sizeText = (n) => (!n ? '' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 
-export default function RfqDetail({ cfg }) {
+export default function RfqDetail({ cfg, me }) {
   const { id } = useParams()
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -30,7 +30,7 @@ export default function RfqDetail({ cfg }) {
   const stage = stageOf(rfq.status, latest?.status, latest?.latest_dispatch?.status)
   const st = STAGE[stage]
   const sentQuote = quotes.find((q) => q.latest_dispatch)
-  const canQuote = rfq.status !== 'closed'
+  const canQuote = rfq.status !== 'closed' && me?.role !== 'viewer'
 
   const create = async (body) => {
     const q = await api(`/rfqs/${id}/quotes`, { method: 'POST', body })

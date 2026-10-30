@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import text
 
 from .. import config, db
-from ..auth import GOOGLE_AUTH, require_user
+from ..auth import GOOGLE_AUTH, require_admin, require_user
 from . import gmail, ingest
 
 router = APIRouter(prefix="/api/gmail", dependencies=[Depends(require_user)])
@@ -27,7 +27,7 @@ def _check_configured() -> None:
         raise HTTPException(503, "信箱功能還沒設定（GOOGLE_CLIENT_ID／GOOGLE_CLIENT_SECRET／MAIL_TOKEN_KEY）")
 
 
-@router.get("/connect")
+@router.get("/connect", dependencies=[Depends(require_admin)])
 async def connect(request: Request) -> RedirectResponse:
     _check_configured()
     state = secrets.token_urlsafe(24)
@@ -48,7 +48,7 @@ async def connect(request: Request) -> RedirectResponse:
 
 
 @router.get("/callback")
-async def callback(request: Request, code: str = "", state: str = "", error: str = "", user: str = Depends(require_user)) -> RedirectResponse:
+async def callback(request: Request, code: str = "", state: str = "", error: str = "", user: str = Depends(require_admin)) -> RedirectResponse:
     expected = request.session.pop("gmail_state", None)
     if error or not code or not expected or not secrets.compare_digest(state, expected):
         return RedirectResponse("/mail?error=oauth", status_code=302)
@@ -109,7 +109,7 @@ async def poll_now() -> dict:
     return await ingest.poll()
 
 
-@router.post("/disconnect")
+@router.post("/disconnect", dependencies=[Depends(require_admin)])
 async def disconnect() -> dict:
     async with db.tx() as conn:
         rows = (await conn.execute(text("DELETE FROM rfq.mailboxes RETURNING refresh_token_enc"))).scalars().all()

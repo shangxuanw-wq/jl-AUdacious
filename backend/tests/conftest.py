@@ -38,9 +38,12 @@ def anyio_backend():
 @pytest.fixture
 async def client():
     config.reload_settings()
+    from rfq_app import access
+
+    access.invalidate()
     dispatcher.client_factory = lambda: httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE, timeout=30)
     async with db.tx() as conn:
-        await conn.execute(text("TRUNCATE rfq.dispatch_attempts, rfq.quote_dispatches, rfq.quote_items, rfq.quotes, rfq.inbound_messages, rfq.mailboxes, rfq.rfqs, rfq.quote_no_counters RESTART IDENTITY CASCADE"))
+        await conn.execute(text("TRUNCATE rfq.dispatch_attempts, rfq.quote_dispatches, rfq.quote_items, rfq.quotes, rfq.inbound_messages, rfq.mailboxes, rfq.rfqs, rfq.quote_no_counters, rfq.access_rules, rfq.user_logins RESTART IDENTITY CASCADE"))
         await conn.execute(text("DELETE FROM mock_partner.rfqs WHERE number NOT IN ('AUD-RFQ-2026-0099','AUD-RFQ-2026-0098','AUD-RFQ-2026-0097','AUD-RFQ-2026-0096','AUD-RFQ-2026-0095','AUD-RFQ-2026-0094')"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as c:
         r = await c.post("/api/mock-aud/_admin/reset")

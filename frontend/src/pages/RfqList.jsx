@@ -12,7 +12,7 @@ const TABS = [
 
 const money = (v, cur = 'TWD') => (v === null || v === undefined ? '' : `${cur} ${Number(v).toLocaleString('zh-TW', { maximumFractionDigits: 2 })}`)
 
-export default function RfqList({ cfg }) {
+export default function RfqList({ cfg, me }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [params, setParams] = useSearchParams()
@@ -58,7 +58,7 @@ export default function RfqList({ cfg }) {
     <div className="space-y-5">
       <div className="flex animate-rise flex-wrap items-end justify-between gap-3">
         <h1 className="text-[26px] font-black">詢價單</h1>
-        {cfg?.manual_rfq_enabled && <ManualCreate />}
+        {cfg?.manual_rfq_enabled && me?.role !== 'viewer' && <ManualCreate />}
       </div>
 
       {error && <p className="error">{error}</p>}
