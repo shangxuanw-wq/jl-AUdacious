@@ -34,7 +34,7 @@ export default function RfqDetail({ cfg }) {
           <Badge map={RFQ_STATUS} value={rfq.status} />
           <span className="rounded-md bg-sky-50 px-2 py-0.5 text-xs text-sky-700 ring-1 ring-sky-200">規格版次 {rfq.spec_revision}</span>
           {rfq.is_test && <span className="rounded-md bg-violet-50 px-2 py-0.5 text-xs text-violet-700 ring-1 ring-violet-200">測試單</span>}
-          {!data.in_mock && cfg && !cfg.target_is_partner_prod && (
+          {!data.in_mock && cfg?.mock_enabled && !cfg.target_is_partner_prod && (
             <span className="text-xs text-amber-700">假澳得仕沒有這張詢價單，送出會回 404</span>
           )}
         </div>

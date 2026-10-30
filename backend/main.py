@@ -61,6 +61,14 @@ app.include_router(auth_router)
 app.include_router(rfq_router)
 app.include_router(mock_router)
 app.include_router(mock_admin_router)
+
+
+@app.middleware("http")
+async def mock_switch(request: Request, call_next):
+    # 假澳得仕關掉時，整組 /api/mock-aud/* 都當作不存在
+    if request.scope.get("path", "").startswith(("/api/mock-aud", "/mock-aud")) and not config.settings.mock_enabled:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return await call_next(request)
 app.include_router(selftest_router)
 app.include_router(mail_router)
 app.include_router(mail_files_router)

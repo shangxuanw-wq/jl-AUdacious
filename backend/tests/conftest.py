@@ -18,6 +18,7 @@ os.environ.update(
         "APP_BASE_URL": BASE,
         "SESSION_SECRET": "test-session-secret",
         "RFQ_INLINE_RETRY_SECONDS": "0",
+        "MOCK_AUD_ENABLED": "true",
     }
 )
 os.environ.pop("VERCEL", None)

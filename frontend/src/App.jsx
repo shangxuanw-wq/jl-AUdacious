@@ -48,7 +48,7 @@ export default function App() {
           <nav className="flex gap-1">
             <NavLink to="/" end className={tab}>詢價單</NavLink>
             <NavLink to="/mail" className={tab}>信箱</NavLink>
-            <NavLink to="/mock" className={tab}>假澳得仕</NavLink>
+            {cfg?.mock_enabled && <NavLink to="/mock" className={tab}>假澳得仕</NavLink>}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-xs text-stone-500">
             {cfg && !cfg.target_is_partner_prod && (
@@ -67,7 +67,7 @@ export default function App() {
           <Route path="/" element={<RfqList />} />
           <Route path="/rfqs/:id" element={<RfqDetail cfg={cfg} />} />
           <Route path="/quotes/:id" element={<QuoteDetail cfg={cfg} />} />
-          <Route path="/mock" element={<MockPanel />} />
+          {cfg?.mock_enabled && <Route path="/mock" element={<MockPanel />} />}
           <Route path="/mail" element={<Mail />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="*" element={<div className="text-sm text-stone-500">找不到這個頁面</div>} />

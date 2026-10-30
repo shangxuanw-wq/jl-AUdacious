@@ -37,6 +37,7 @@ class Settings:
     mail_reply_mode: str
     aud_trial_token: str
     partner_token: str
+    mock_enabled: bool
     mail_token_key: str
     rfq_mailbox: str
     rfq_sender_allow: frozenset[str]
@@ -99,6 +100,8 @@ def load_settings() -> Settings:
         mail_reply_mode=_env("RFQ_MAIL_REPLY").lower(),
         # 試跑步驟 1（澳得仕 trial.py 的雲端版）用的 token；跟正式送出的 AUD_QUOTE_API_TOKEN 分開
         aud_trial_token=_env("AUD_TRIAL_TOKEN") or _env("AUD_PARTNER_TOKEN") or _env("RFQ_WEBHOOK_TOKEN"),
+        # 站內假澳得仕（開發用）；正式對接後關掉
+        mock_enabled=_env("MOCK_AUD_ENABLED", "false").lower() == "true",
         partner_token=_env("AUD_PARTNER_TOKEN") or _env("RFQ_WEBHOOK_TOKEN") or _env("AUD_TRIAL_TOKEN"),
         inline_retry_seconds=float(_env("RFQ_INLINE_RETRY_SECONDS", "45") or 45),
         mail_token_key=_env("MAIL_TOKEN_KEY"),

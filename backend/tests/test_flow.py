@@ -496,3 +496,15 @@ async def test_prod_target_uses_partner_token(client, monkeypatch):
         dispatcher.client_factory = real
         monkeypatch.undo()
         config.reload_settings()
+
+
+async def test_mock_can_be_switched_off(client, monkeypatch):
+    monkeypatch.setenv("MOCK_AUD_ENABLED", "false")
+    config.reload_settings()
+    try:
+        assert (await client.get("/api/mock-aud/api/rfq/quotes")).status_code == 404
+        assert (await client.get("/api/mock-aud/_admin/state")).status_code == 404
+        assert (await client.get("/api/config")).json()["mock_enabled"] is False
+    finally:
+        monkeypatch.undo()
+        config.reload_settings()

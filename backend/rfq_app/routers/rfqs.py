@@ -167,6 +167,7 @@ async def app_config() -> dict:
         "target_is_partner_prod": s.target_is_partner_prod,
         "allow_partner_prod": s.allow_partner_prod,
         "vendor_name": s.vendor_name,
+        "mock_enabled": s.mock_enabled,
         "today": taipei_today().isoformat(),
         "reply_mode": __import__("rfq_app.mail.reply", fromlist=["reply_mode"]).reply_mode(),
     }
