@@ -28,7 +28,8 @@ def reply_mode() -> str:
     s = config.settings
     if s.mail_reply_mode in ("live", "self", "off"):
         return s.mail_reply_mode
-    return "live" if s.target_is_partner_prod else "self"
+    # 正式站要「目標是正式站」而且「開關已打開」才寄給承辦人；否則一律只寄給自己
+    return "live" if (s.target_is_partner_prod and s.allow_partner_prod) else "self"
 
 
 async def load_quote_bundle(conn, quote_id: int) -> tuple[dict, dict, list[dict]]:
