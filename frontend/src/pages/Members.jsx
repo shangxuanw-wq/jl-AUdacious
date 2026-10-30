@@ -113,13 +113,6 @@ export default function Members({ me }) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const stats = [
-    ['管理員', count('admin'), 'admin'],
-    ['成員', count('member'), 'member'],
-    ['唯讀', count('viewer'), 'viewer'],
-    ['開放網域', data.rules.filter((r) => r.kind === 'domain' && r.active).length, null],
-  ]
-
   return (
     <div className="space-y-5">
       <div className="flex animate-rise flex-wrap items-end justify-between gap-3">
@@ -134,22 +127,6 @@ export default function Members({ me }) {
             <Plus />加入成員
           </button>
         )}
-      </div>
-
-      <div className="hidden gap-3 sm:grid sm:grid-cols-4">
-        {stats.map(([label, n, f], i) => (
-          <button
-            key={label}
-            type="button"
-            disabled={!f}
-            onClick={() => f && setFilter(filter === f ? 'all' : f)}
-            className={`card animate-rise px-4 py-3.5 text-left transition duration-200 enabled:hover:-translate-y-0.5 enabled:hover:shadow-lift ${f && filter === f ? 'border-accent ring-[3px] ring-accent/10' : ''}`}
-            style={{ animationDelay: `${0.04 * (i + 1)}s` }}
-          >
-            <div className="text-xs text-stone-500">{label}</div>
-            <div className="num mt-1 text-2xl font-black leading-none">{n}</div>
-          </button>
-        ))}
       </div>
 
       {error && <p className="error">{error}</p>}
