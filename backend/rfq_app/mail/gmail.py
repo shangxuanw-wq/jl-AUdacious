@@ -119,6 +119,18 @@ async def profile_email(token: str) -> str:
     return str((await _get(token, "/profile")).get("emailAddress", "")).lower()
 
 
+async def signature_html(token: str, email: str) -> str | None:
+    """信箱在 Gmail 設定的簽名檔（HTML）；讀不到就回 None（回信改用公司名稱）。"""
+    try:
+        j = await _get(token, "/settings/sendAs")
+    except (httpx.HTTPError, MailAuthError):
+        return None
+    rows = j.get("sendAs", [])
+    row = next((r for r in rows if str(r.get("sendAsEmail", "")).lower() == email.lower()), None) or next((r for r in rows if r.get("isPrimary")), None)
+    sig = (row or {}).get("signature") or ""
+    return sig.strip() or None
+
+
 async def list_message_ids(token: str, q: str, max_results: int = 25) -> list[str]:
     j = await _get(token, "/messages", {"q": q, "maxResults": max_results})
     return [m["id"] for m in j.get("messages", [])]

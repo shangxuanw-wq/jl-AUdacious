@@ -56,7 +56,7 @@ def _body(rfq: dict, quote: dict, items: list[dict], vendor: str, mode: str) -> 
     if mode == "self":
         lines += ["（開發期測試：這封只寄給我方信箱，沒有寄給澳得仕。）", ""]
     lines += [
-        f"{rfq.get('contact_name') or ''} 您好：".strip(),
+        "您好：",
         "",
         f"附上詢價編號 {rfq['rfq_number']}（規格版次 {quote.get('rfq_revision') or rfq.get('spec_revision') or 1}）的報價單，",
         f"報價單號 {quote['quote_no']}，修訂 {quote['quote_revision']}。",
@@ -74,8 +74,27 @@ def _body(rfq: dict, quote: dict, items: list[dict], vendor: str, mode: str) -> 
     ]
     if quote.get("note"):
         lines += ["", f"備註：{quote['note']}"]
-    lines += ["", "以報價單 PDF 為準；如有問題請直接回覆這封信。", "", vendor]
+    lines += ["", "以報價單 PDF 為準；如有問題請直接回覆這封信。"]
     return "\n".join(lines)
+
+
+def _sig_text(sig_html: str) -> str:
+    """Gmail 簽名檔（HTML）→ 純文字版。"""
+    import html as _html
+    import re as _re
+
+    t = _re.sub(r"(?i)<br\s*/?>|</(div|p|tr|li|h[1-6])>", "\n", sig_html)
+    t = _re.sub(r"<[^>]+>", "", t)
+    t = _html.unescape(t).replace("\xa0", " ")
+    return "\n".join(line.rstrip() for line in t.splitlines()).strip()
+
+
+def _html_body(text_body: str, sig_html: str | None, vendor: str) -> str:
+    import html as _html
+
+    paras = "<br>".join(_html.escape(line) for line in text_body.split("\n"))
+    sig = f'<br><br><div class="gmail_signature">{sig_html}</div>' if sig_html else f"<br><br>{_html.escape(vendor)}"
+    return f'<div dir="ltr" style="font-family:Arial,Helvetica,sans-serif;font-size:14px">{paras}{sig}</div>'
 
 
 async def _send_raw(token: str, raw: bytes, thread_id: str | None) -> str:
@@ -138,9 +157,13 @@ async def send_quote_reply(quote_id: int, user: str | None, force: bool = False)
         if src["message_id_header"]:
             msg["In-Reply-To"] = src["message_id_header"]
             msg["References"] = src["message_id_header"]
-        msg.set_content(_body(rfq, quote, items, s.vendor_name, mode))
-        msg.add_attachment(pdf, maintype="application", subtype="pdf", filename=pdf_filename(quote))
         token = await gmail.access_token(gmail.decrypt(src["refresh_token_enc"]))
+        sig_html = await gmail.signature_html(token, src["email"])
+        text_body = _body(rfq, quote, items, s.vendor_name, mode)
+        sig_text = _sig_text(sig_html) if sig_html else s.vendor_name
+        msg.set_content(f"{text_body}\n\n--\n{sig_text}\n")
+        msg.add_alternative(_html_body(text_body, sig_html, s.vendor_name), subtype="html")
+        msg.add_attachment(pdf, maintype="application", subtype="pdf", filename=pdf_filename(quote))
         gid = await _send_raw(token, msg.as_bytes(), src["thread_id"])
         async with db.tx() as conn:
             await conn.execute(

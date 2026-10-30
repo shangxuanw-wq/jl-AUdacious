@@ -124,6 +124,7 @@ class FakeGmail:
         self.profile = MAILBOX
         self.calls: list[str] = []
         self.sent: list[dict] = []
+        self.signature = '<div>張先生 Jimmy<br>兆臨企業有限公司<br>TEL 02-1234-5678</div>'
 
     def handler(self, req: httpx.Request) -> httpx.Response:
         url = str(req.url)
@@ -144,6 +145,8 @@ class FakeGmail:
             j = json.loads(req.content)
             self.sent.append({"raw": base64.urlsafe_b64decode(j["raw"]), "threadId": j.get("threadId")})
             return httpx.Response(200, json={"id": f"sent-{len(self.sent)}", "threadId": j.get("threadId")})
+        if path.endswith("/settings/sendAs"):
+            return httpx.Response(200, json={"sendAs": [{"sendAsEmail": MAILBOX, "isPrimary": True, "signature": self.signature}]})
         if path.endswith("/profile"):
             return httpx.Response(200, json={"emailAddress": self.profile})
         if path.endswith("/messages"):
@@ -352,6 +355,10 @@ async def test_send_replies_in_thread_with_pdf(client, fake):
     assert m["In-Reply-To"] == "<m1@audacious.example>" and m["References"] == "<m1@audacious.example>"
     body = m.get_body(("plain",)).get_content()
     assert "開發期測試" in body and "AUD-RFQ-2026-0099" in body and "規格版次 1" in body and q["quote_no"] in body
+    assert "\n您好：\n" in body and "王小明" not in body
+    assert body.rstrip().endswith("張先生 Jimmy\n兆臨企業有限公司\nTEL 02-1234-5678")
+    html = m.get_body(("html",)).get_content()
+    assert '<div class="gmail_signature"><div>張先生 Jimmy<br>兆臨企業有限公司' in html
     atts = list(m.iter_attachments())
     assert len(atts) == 1 and atts[0].get_content_type() == "application/pdf"
     pdf = atts[0].get_content()
@@ -408,3 +415,11 @@ async def test_reply_failure_recorded(client, fake):
     j = (await client.post(f"/api/quotes/{q['id']}/send")).json()
     assert j["enqueue"] == "accepted" and j["mail"]["status"] == "failed" and j["mail"]["error"].startswith("auth:")
     assert (await client.get(f"/api/quotes/{q['id']}")).json()["mails"][0]["status"] == "failed"
+
+
+async def test_reply_without_signature_uses_vendor(client, fake):
+    fake.signature = ""
+    rid, q = await _quote_from_mail(client, fake)
+    await client.post(f"/api/quotes/{q['id']}/send")
+    m = _parse(fake.sent[0]["raw"])
+    assert m.get_body(("plain",)).get_content().rstrip().endswith("--\n兆臨")
