@@ -36,13 +36,21 @@ class Settings:
     inline_retry_seconds: float
     mail_reply_mode: str
     aud_trial_token: str
+    partner_token: str
     mail_token_key: str
     rfq_mailbox: str
     rfq_sender_allow: frozenset[str]
 
     @property
     def worker_enabled(self) -> bool:
-        return bool(self.aud_quote_api_url and self.aud_quote_api_token)
+        return bool(self.aud_quote_api_url and self.token_for(self.aud_quote_api_url))
+
+    def token_for(self, url: str) -> str:
+        """送到澳得仕正式站用 Gavin 給的 token（AUD_PARTNER_TOKEN，舊名 RFQ_WEBHOOK_TOKEN／AUD_TRIAL_TOKEN）；
+        送到假澳得仕用 AUD_QUOTE_API_TOKEN。兩組分開，切換目標時不用改 token。"""
+        if urlparse(url).hostname == PARTNER_PROD_HOST and self.partner_token:
+            return self.partner_token
+        return self.aud_quote_api_token
 
     @property
     def google_login_configured(self) -> bool:
@@ -90,7 +98,8 @@ def load_settings() -> Settings:
         # 報價回信寄給誰：live（承辦人）／self（只寄給自己）／off；空的＝送正式站時 live，其他 self
         mail_reply_mode=_env("RFQ_MAIL_REPLY").lower(),
         # 試跑步驟 1（澳得仕 trial.py 的雲端版）用的 token；跟正式送出的 AUD_QUOTE_API_TOKEN 分開
-        aud_trial_token=_env("AUD_TRIAL_TOKEN") or _env("RFQ_WEBHOOK_TOKEN"),
+        aud_trial_token=_env("AUD_TRIAL_TOKEN") or _env("AUD_PARTNER_TOKEN") or _env("RFQ_WEBHOOK_TOKEN"),
+        partner_token=_env("AUD_PARTNER_TOKEN") or _env("RFQ_WEBHOOK_TOKEN") or _env("AUD_TRIAL_TOKEN"),
         inline_retry_seconds=float(_env("RFQ_INLINE_RETRY_SECONDS", "45") or 45),
         mail_token_key=_env("MAIL_TOKEN_KEY"),
         rfq_mailbox=(_env("RFQ_MAILBOX", "jl-jimmy@jauhlirn.com") or "jl-jimmy@jauhlirn.com").lower(),

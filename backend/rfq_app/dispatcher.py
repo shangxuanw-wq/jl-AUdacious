@@ -168,11 +168,12 @@ async def process_dispatch(dispatch_id: int, now: datetime | None = None) -> Pro
     resp_headers: Any = None
     resp_text: str | None = None
     exc_code: str | None = None
-    if not s.aud_quote_api_token:
+    token = s.token_for(target_url) if target_url != INTERNAL_MOCK else s.aud_quote_api_token
+    if not token:
         exc_code = "token_missing"
     else:
         headers = {
-            "Authorization": f"Bearer {s.aud_quote_api_token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "X-Event-Id": event_id,
             "X-Request-Id": request_id,

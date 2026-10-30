@@ -461,3 +461,38 @@ async def test_internal_mock_target(client):
         assert d["target_url"] == "internal-mock" and d["status"] == "accepted"
     finally:
         config.reload_settings()
+
+
+def test_token_selection(monkeypatch):
+    monkeypatch.setenv("AUD_QUOTE_API_TOKEN", "mock-token")
+    monkeypatch.setenv("RFQ_WEBHOOK_TOKEN", "partner-token")
+    s = config.reload_settings()
+    assert s.token_for("https://audacious-3d-studio.vercel.app/api/rfq/quotes") == "partner-token"
+    assert s.token_for("internal-mock") == "mock-token"
+    assert s.token_for("http://testserver/api/mock-aud/api/rfq/quotes") == "mock-token"
+    monkeypatch.undo()
+    config.reload_settings()
+
+
+async def test_prod_target_uses_partner_token(client, monkeypatch):
+    seen = {}
+
+    def handler(req):
+        seen["auth"] = req.headers.get("authorization")
+        return httpx.Response(202, json={"ok": True, "outcome": "pending_review", "candidate_id": "c", "candidate_revision": 1, "issues": []})
+
+    monkeypatch.setenv("AUD_QUOTE_API_URL", "https://audacious-3d-studio.vercel.app/api/rfq/quotes")
+    monkeypatch.setenv("RFQ_ALLOW_PARTNER_PROD", "true")
+    monkeypatch.setenv("RFQ_WEBHOOK_TOKEN", "partner-token-xyz")
+    config.reload_settings()
+    real = dispatcher.client_factory
+    dispatcher.client_factory = lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        rfq = await make_rfq(client)
+        q = await make_quote(client, rfq["id"])
+        d = await dispatch_row((await send(client, q["id"]))["dispatch_id"])
+        assert d["status"] == "accepted" and seen["auth"] == "Bearer partner-token-xyz"
+    finally:
+        dispatcher.client_factory = real
+        monkeypatch.undo()
+        config.reload_settings()
