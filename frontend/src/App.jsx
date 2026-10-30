@@ -8,6 +8,7 @@ import QuoteDetail from './pages/QuoteDetail.jsx'
 import MockPanel from './pages/MockPanel.jsx'
 import Mail from './pages/Mail.jsx'
 import Members, { ROLE_INFO } from './pages/Members.jsx'
+import Privacy from './pages/Privacy.jsx'
 
 export default function App() {
   const [me, setMe] = useState(undefined)
@@ -24,6 +25,7 @@ export default function App() {
     if (me?.email) api('/config').then(setCfg).catch(() => setCfg(null))
   }, [me?.email])
 
+  if (loc.pathname === '/privacy') return <Privacy />
   if (me === undefined) return <div className="p-8 text-sm text-stone-500">載入中…</div>
   if (!me.email) {
     if (loc.pathname !== '/login') return <Navigate to="/login" replace />
