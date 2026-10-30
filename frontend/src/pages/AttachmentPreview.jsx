@@ -38,7 +38,7 @@ export default function AttachmentPreview({ rfqId, attachments, index, onIndex, 
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-stone-900/60 p-2 sm:p-6" onClick={onClose}>
-      <div className="card flex w-full max-w-6xl flex-col p-3 sm:p-4" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={a.filename}>
+      <div className="card flex w-full max-w-[1600px] flex-col p-3 sm:p-4" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={a.filename}>
         <div className="mb-3 flex items-center gap-2">
           <button className="btn-ghost px-2 py-1" disabled={index === 0} onClick={() => onIndex(index - 1)} aria-label="上一個附件">‹</button>
           <button className="btn-ghost px-2 py-1" disabled={index === attachments.length - 1} onClick={() => onIndex(index + 1)} aria-label="下一個附件">›</button>

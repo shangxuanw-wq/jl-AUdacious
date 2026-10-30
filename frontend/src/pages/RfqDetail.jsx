@@ -128,7 +128,7 @@ export default function RfqDetail({ cfg }) {
           </section>
         </div>
 
-        <aside className="flex min-w-0 flex-[1_1_340px] flex-col gap-5">
+        <aside className="flex min-w-0 flex-[1_1_340px] flex-col gap-5 2xl:flex-[1_1_420px]">
           <section className="card animate-rise p-5" style={{ animationDelay: '.24s' }}>
             <h2 className="mb-3.5 text-base font-bold">報價</h2>
             {quotes.length === 0 && (

@@ -170,7 +170,7 @@ export default function QuoteDetail({ cfg }) {
             )}
           </section>
 
-          <aside className="flex min-w-0 flex-[1_1_340px] flex-col gap-5">
+          <aside className="flex min-w-0 flex-[1_1_340px] flex-col gap-5 2xl:flex-[1_1_420px]">
             <section className="card animate-rise p-5" style={{ animationDelay: '.18s' }}>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-base font-bold">回信</h2>

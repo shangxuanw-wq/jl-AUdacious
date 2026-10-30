@@ -40,7 +40,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:gap-x-4 sm:px-5">
+        <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:gap-x-4 sm:px-6 xl:px-10">
           <Link to="/" className="flex items-center gap-2.5 font-bold text-stone-900 sm:mr-3">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-[13px] font-black text-white">JL</span>
             <span className="hidden text-[15px] sm:inline">估價中心</span>
@@ -59,7 +59,7 @@ export default function App() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-[1240px] px-5 pb-12 pt-6">
+      <main className="mx-auto max-w-[1680px] px-4 pb-12 pt-6 sm:px-6 xl:px-10">
         <Routes>
           <Route path="/" element={<RfqList cfg={cfg} />} />
           <Route path="/rfqs/:id" element={<RfqDetail cfg={cfg} />} />
