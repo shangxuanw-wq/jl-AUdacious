@@ -74,7 +74,6 @@ def _body(rfq: dict, quote: dict, items: list[dict], vendor: str, mode: str) -> 
     ]
     if quote.get("note"):
         lines += ["", f"備註：{quote['note']}"]
-    lines += ["", "以報價單 PDF 為準；如有問題請直接回覆這封信。"]
     return "\n".join(lines)
 
 
