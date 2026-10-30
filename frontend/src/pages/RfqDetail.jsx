@@ -175,7 +175,7 @@ function Tile({ a, rfqId, onOpen }) {
   const url = `/api/rfqs/${rfqId}/attachments/${a.n}`
   const is3d = kind === 'stl' || kind === 'step' || kind === 'iges'
   const tag = { step: 'STEP', iges: 'IGES', stl: 'STL', image: '圖片', pdf: 'PDF' }[kind] || (ext(a.filename) || '檔案').toUpperCase()
-  const overlay = is3d ? '3D 預覽' : kind === 'image' ? '看大圖' : kind === 'pdf' ? '預覽' : '下載'
+  const overlay = is3d ? '3D 預覽' : kind === 'image' ? '預覽' : kind === 'pdf' ? '預覽' : '下載'
   const body = (
     <>
       <div className="grid h-24 place-items-center overflow-hidden rounded-lg bg-gradient-to-b from-stone-75 to-stone-100">
