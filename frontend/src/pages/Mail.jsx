@@ -4,10 +4,10 @@ import { api, dt } from '../api.js'
 import { Badge } from '../labels.jsx'
 
 const MSG_STATUS = {
-  created: ['已建單', 'bg-emerald-50 text-emerald-700 ring-emerald-200'],
-  updated: ['已更新', 'bg-sky-50 text-sky-700 ring-sky-200'],
-  ignored: ['略過', 'bg-stone-100 text-stone-600 ring-stone-200'],
-  error: ['讀不懂', 'bg-red-50 text-red-700 ring-red-200'],
+  created: ['已建單', 'chip-hot'],
+  updated: ['已更新', 'chip-hot'],
+  ignored: ['略過', 'chip-mute'],
+  error: ['讀不懂', 'chip-bad'],
 }
 
 const REASONS = {
@@ -68,23 +68,23 @@ export default function Mail() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">信箱</h1>
-        <p className="text-sm text-stone-500">連接 <span className="font-mono">{s.expected_mailbox}</span> 後，系統每分鐘讀一次主旨含 AUD-RFQ 的新信，自動建立或更新詢價單。只讀，不會改信箱內容。</p>
+        <h1 className="text-[26px] font-black">信箱</h1>
+        <p className="mt-1 text-sm text-stone-500">連接 <span className="font-mono">{s.expected_mailbox}</span> 後，系統每分鐘讀一次主旨含 AUD-RFQ 的新信，自動建立或更新詢價單。只讀，不會改信箱內容。</p>
       </div>
-      {params.get('connected') && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">信箱已連接。</p>}
+      {params.get('connected') && <p className="notice">信箱已連接。</p>}
       {connErr && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="error">
           {CONNECT_ERRORS[connErr] || '連接失敗'}{connErr === 'wrong_mailbox' && params.get('got') ? `（你登入的是 ${params.get('got')}，請改用 ${s.expected_mailbox}）` : ''}
         </p>
       )}
-      {!s.configured && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">信箱功能還沒設定完成（缺 Google 設定或 MAIL_TOKEN_KEY）。</p>}
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {!s.configured && <p className="notice">信箱功能還沒設定完成（缺 Google 設定或 MAIL_TOKEN_KEY）。</p>}
+      {error && <p className="error">{error}</p>}
 
-      <section className="card space-y-3 p-5">
+      <section className="card animate-rise space-y-3 p-5">
         {box ? (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">已連接</span>
+              <span className="chip-hot">已連接</span>
               <span className="font-mono text-sm">{box.email}</span>
               <span className="text-xs text-stone-500">由 {box.connected_by || '—'} 於 {dt(box.connected_at)} 連接</span>
               <div className="ml-auto flex gap-2">
@@ -97,7 +97,7 @@ export default function Mail() {
               {s.sender_allow.length > 0 && <>　只收：{s.sender_allow.join('、')}</>}
             </p>
             {box.last_error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="error">
                 收信失敗：{box.last_error}{box.last_error.startsWith('auth:') && '（授權失效，請重新連接）'}
                 {box.last_error.startsWith('auth:') && <a className="ml-2 underline" href="/api/gmail/connect">重新連接</a>}
               </p>
@@ -114,10 +114,10 @@ export default function Mail() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="font-bold">最近收到的詢價信</h2>
-        <div className="card overflow-x-auto">
+        <h2 className="text-base font-bold">最近收到的詢價信</h2>
+        <div className="card animate-rise overflow-x-auto" style={{ animationDelay: '.08s' }}>
           <table className="w-full min-w-[720px]">
-            <thead className="bg-stone-50">
+            <thead className="bg-stone-75">
               <tr>
                 <th className="th">收到</th>
                 <th className="th">主旨</th>
@@ -130,7 +130,7 @@ export default function Mail() {
             <tbody>
               {s.messages.length === 0 && <tr><td className="td text-stone-500" colSpan={6}>還沒有</td></tr>}
               {s.messages.map((m) => (
-                <tr key={m.id}>
+                <tr key={m.id} className="transition-colors hover:bg-[#FFFBF7]">
                   <td className="td text-xs">{dt(m.received_at)}</td>
                   <td className="td text-sm">{m.subject}</td>
                   <td className="td text-xs">{m.from_addr}</td>

@@ -508,3 +508,34 @@ async def test_mock_can_be_switched_off(client, monkeypatch):
     finally:
         monkeypatch.undo()
         config.reload_settings()
+
+
+async def test_list_stage_and_amount(client):
+    rfq = await make_rfq(client)
+    row = lambda: next(r for r in (client_rows) if r["id"] == rfq["id"])  # noqa: E731
+    client_rows = (await client.get("/api/rfqs")).json()["rfqs"]
+    assert row()["stage"] == "todo" and row()["latest_quote"] is None
+    q = await make_quote(client, rfq["id"], unit_price="100")
+    client_rows = (await client.get("/api/rfqs")).json()["rfqs"]
+    lq = row()["latest_quote"]
+    assert row()["stage"] == "draft" and lq["quote_no"] == q["quote_no"] and lq["grand_total"] == 105 and lq["currency"] == "TWD"
+    r = await client.post(f"/api/quotes/{q['id']}/send")
+    assert r.status_code == 200, r.text
+    for _ in range(40):
+        client_rows = (await client.get("/api/rfqs")).json()["rfqs"]
+        if row()["stage"] != "sending":
+            break
+        await asyncio.sleep(0.25)
+    assert row()["stage"] == "review"
+
+
+async def test_manual_rfq_can_be_disabled(client, monkeypatch):
+    monkeypatch.setenv("MANUAL_RFQ_ENABLED", "false")
+    config.reload_settings()
+    try:
+        r = await client.post("/api/rfqs", json={"rfq_number": RFQ, "item_name": "x", "material_text": "PLA", "quantity": 1, "unit": "pcs"})
+        assert r.status_code == 404
+        assert (await client.get("/api/config")).json()["manual_rfq_enabled"] is False
+    finally:
+        monkeypatch.undo()
+        config.reload_settings()

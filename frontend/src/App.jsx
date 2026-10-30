@@ -35,36 +35,33 @@ export default function App() {
   }
 
   const tab = ({ isActive }) =>
-    `rounded-md px-3 py-1.5 text-sm ${isActive ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-200'}`
+    `rounded-lg px-3.5 py-2 text-sm transition-colors ${isActive ? 'bg-accent-soft font-medium text-accent-dark' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-900'}`
 
   return (
     <div className="min-h-screen">
       <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
-          <Link to="/" className="mr-2 flex items-center gap-2 font-bold">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs text-white">JL</span>
-            估價
+        <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:gap-x-4 sm:px-5">
+          <Link to="/" className="flex items-center gap-2.5 font-bold text-stone-900 sm:mr-3">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-[13px] font-black text-white">JL</span>
+            <span className="hidden text-[15px] sm:inline">估價中心</span>
           </Link>
           <nav className="flex gap-1">
             <NavLink to="/" end className={tab}>詢價單</NavLink>
             <NavLink to="/mail" className={tab}>信箱</NavLink>
-            {cfg?.mock_enabled && <NavLink to="/mock" className={tab}>假澳得仕</NavLink>}
+            {cfg?.mock_enabled && <NavLink to="/mock" className={tab}>模擬對方</NavLink>}
           </nav>
-          <div className="ml-auto flex items-center gap-3 text-xs text-stone-500">
-            {cfg && !cfg.target_is_partner_prod && (
-              <span className="rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent-dark">送往：假澳得仕（開發）</span>
-            )}
-            {cfg?.target_is_partner_prod && (
-              <span className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700">送往：澳得仕正式站</span>
-            )}
-            <span className="hidden sm:inline">{me.email}</span>
-            <button className="btn-ghost px-2.5 py-1 text-xs" onClick={logout}>登出</button>
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            {cfg && !cfg.target_is_partner_prod && <span className="chip-hot">測試環境</span>}
+            <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-accent text-[13px] font-bold uppercase text-white" title={me.email} aria-label={me.email}>
+              {(me.email || '?').replace(/^key:/, '').slice(0, 1)}
+            </span>
+            <button className="btn-ghost btn-sm" onClick={logout}>登出</button>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-[1240px] px-5 pb-12 pt-6">
         <Routes>
-          <Route path="/" element={<RfqList />} />
+          <Route path="/" element={<RfqList cfg={cfg} />} />
           <Route path="/rfqs/:id" element={<RfqDetail cfg={cfg} />} />
           <Route path="/quotes/:id" element={<QuoteDetail cfg={cfg} />} />
           {cfg?.mock_enabled && <Route path="/mock" element={<MockPanel />} />}

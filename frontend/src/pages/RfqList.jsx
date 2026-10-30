@@ -1,136 +1,203 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { api, dt } from '../api.js'
-import { Badge, QUOTE_STATUS, RFQ_STATUS } from '../labels.jsx'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { api } from '../api.js'
+import { Arrow, Plus, Search, STAGE, shortTime } from '../ui.jsx'
+
+const TABS = [
+  ['all', '全部', null],
+  ['todo', '待報價', ['todo', 'draft', 'failed']],
+  ['review', '審核中', ['sending', 'review']],
+  ['done', '完成', ['published', 'closed']],
+]
+
+const money = (v, cur = 'TWD') => (v === null || v === undefined ? '' : `${cur} ${Number(v).toLocaleString('zh-TW', { maximumFractionDigits: 2 })}`)
+
+export default function RfqList({ cfg }) {
+  const [rows, setRows] = useState(null)
+  const [error, setError] = useState('')
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'all'
+  const q = params.get('q') || ''
+
+  useEffect(() => {
+    api('/rfqs').then((d) => setRows(d.rfqs)).catch((e) => setError(e.message))
+  }, [])
+
+  const setParam = (k, v) => {
+    const next = new URLSearchParams(params)
+    if (v && !(k === 'tab' && v === 'all')) next.set(k, v)
+    else next.delete(k)
+    setParams(next, { replace: true })
+  }
+
+  const counts = useMemo(() => {
+    const c = { todo: 0, draft: 0, review: 0 }
+    for (const r of rows || []) {
+      if (r.stage === 'todo' || r.stage === 'failed') c.todo++
+      else if (r.stage === 'draft') c.draft++
+      else if (r.stage === 'review' || r.stage === 'sending') c.review++
+    }
+    return c
+  }, [rows])
+
+  const shown = useMemo(() => {
+    const allow = TABS.find(([k]) => k === tab)[2]
+    const needle = q.trim().toLowerCase()
+    return (rows || []).filter(
+      (r) => (!allow || allow.includes(r.stage)) && (!needle || `${r.rfq_number} ${r.item_name} ${r.material_text}`.toLowerCase().includes(needle)),
+    )
+  }, [rows, tab, q])
+
+  const stats = [
+    ['待報價', counts.todo, 'todo'],
+    ['草稿', counts.draft, 'todo'],
+    ['審核中', counts.review, 'review'],
+  ]
+
+  return (
+    <div className="space-y-5">
+      <div className="flex animate-rise flex-wrap items-end justify-between gap-3">
+        <h1 className="text-[26px] font-black">詢價單</h1>
+        {cfg?.manual_rfq_enabled && <ManualCreate />}
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      <div className="grid grid-cols-3 gap-3.5">
+        {stats.map(([label, n, t], i) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setParam('tab', t)}
+            className={`card animate-rise px-[18px] py-4 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-lift ${label === '審核中' && n > 0 ? 'border-accent-line' : ''}`}
+            style={{ animationDelay: `${0.04 * (i + 1)}s` }}
+          >
+            <div className="text-xs text-stone-500">{label}</div>
+            <div className={`num mt-1.5 text-[28px] font-black leading-none ${label === '審核中' && n > 0 ? 'text-accent' : ''}`}>{rows ? n : '—'}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex animate-rise flex-wrap items-center gap-3" style={{ animationDelay: '.16s' }}>
+        <div className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1" role="tablist">
+          {TABS.map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setParam('tab', k)}
+              className={`min-h-[36px] rounded-[9px] px-3.5 text-sm font-medium transition ${tab === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="relative ml-auto w-full max-w-[360px] flex-[1_1_240px]">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500"><Search /></span>
+          <input
+            type="search"
+            className="input pl-9"
+            placeholder="搜尋詢價編號、品名、材質"
+            aria-label="搜尋詢價單"
+            value={q}
+            onChange={(e) => setParam('q', e.target.value)}
+          />
+        </label>
+      </div>
+
+      <section className="card animate-rise overflow-hidden" style={{ animationDelay: '.22s' }}>
+        {rows === null && !error && <div className="px-5 py-12 text-center text-sm text-stone-500">載入中…</div>}
+        {rows && shown.length === 0 && (
+          <div className="px-5 py-12 text-center text-sm text-stone-500">{rows.length === 0 ? '還沒有詢價單，收到詢價信會自動出現在這裡' : '沒有符合的詢價單'}</div>
+        )}
+        {shown.map((r) => (
+          <Row key={r.id} r={r} />
+        ))}
+      </section>
+    </div>
+  )
+}
+
+function Row({ r }) {
+  const st = STAGE[r.stage] || STAGE.todo
+  const lq = r.latest_quote
+  return (
+    <Link to={`/rfqs/${r.id}`} className="group flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-stone-100 px-5 py-[18px] transition-colors first:border-t-0 hover:bg-[#FFFBF7]">
+      <div className="min-w-0 flex-[1_1_280px]">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-[15px] font-semibold">{r.rfq_number}</span>
+          {r.is_test && <span className="chip-line">測試單</span>}
+        </div>
+        <div className="mt-1 truncate text-sm text-stone-700">{r.item_name}</div>
+        <div className="mt-0.5 text-xs text-stone-500">
+          {r.material_text}・{r.quantity} {r.unit}
+          {r.need_date || r.need_date_text ? `・需求日 ${r.need_date || r.need_date_text}` : ''}
+        </div>
+      </div>
+      <div className="min-w-[140px] flex-[0_1_180px]">
+        <div className="flex items-center gap-1" aria-hidden="true">
+          {[0, 1, 2, 3].map((i) => (
+            <i key={i} className={`block h-1 w-[18px] rounded-sm ${i < st.done ? 'bg-accent' : i === st.done ? 'animate-ring bg-accent/50' : 'bg-stone-200'}`} />
+          ))}
+        </div>
+        <div className={`mt-1.5 text-[13px] font-medium ${r.stage === 'failed' ? 'text-red-700' : st.done >= 4 ? 'text-stone-500' : 'text-accent'}`}>{st.label}</div>
+      </div>
+      <div className="min-w-[150px] flex-[0_1_200px]">
+        {lq ? (
+          <>
+            <div className="font-mono text-[13px] text-stone-500">{lq.quote_no} r{lq.quote_revision}</div>
+            <div className="num text-lg font-bold">{money(lq.grand_total, lq.currency)}</div>
+          </>
+        ) : (
+          <div className="text-[13px] text-stone-400">還沒報價</div>
+        )}
+      </div>
+      <div className="min-w-[90px] text-xs text-stone-500">{shortTime(r.created_at)}</div>
+      <span className="text-stone-400 transition duration-200 group-hover:translate-x-1 group-hover:text-accent"><Arrow /></span>
+    </Link>
+  )
+}
 
 const EMPTY = { rfq_number: 'AUD-RFQ-2026-', item_name: '', material_text: '', quantity: 1, unit: 'pcs', need_date: '', sync_mock: true }
 
-export default function RfqList() {
-  const [rows, setRows] = useState(null)
-  const [error, setError] = useState('')
+/** 只在 MANUAL_RFQ_ENABLED=true（開發測試）時出現。 */
+function ManualCreate() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
-  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const nav = useNavigate()
-
-  const load = () => api('/rfqs').then((d) => setRows(d.rfqs)).catch((e) => setError(e.message))
-  useEffect(() => { load() }, [])
-
-  const set = (k) => (e) => {
-    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value
-    setForm((f) => {
-      const next = { ...f, [k]: v }
-      if (k === 'rfq_number' && (!f.item_name || f.item_name === `工件 ${f.rfq_number}-1`)) next.item_name = `工件 ${v}-1`
-      return next
-    })
-  }
-
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const submit = async (e) => {
     e.preventDefault()
-    setSaving(true)
-    setError('')
     try {
       const r = await api('/rfqs', { method: 'POST', body: { ...form, quantity: Number(form.quantity), need_date: form.need_date || null } })
       nav(`/rfqs/${r.id}`)
     } catch (err) {
       setError(err.message)
-    } finally {
-      setSaving(false)
     }
   }
-
+  if (!open)
+    return (
+      <button className="btn-ghost btn-sm" onClick={() => setOpen(true)}>
+        <Plus size={14} />
+        手動建立（測試）
+      </button>
+    )
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold">詢價單</h1>
-          <p className="text-sm text-stone-500">第 2 段完成前，詢價單先手動建立（照詢價信「工件1｜品名｜材質｜數量」原樣填）。</p>
-        </div>
-        <button className="btn-primary" onClick={() => setOpen((v) => !v)}>{open ? '收起' : '＋ 新增詢價單'}</button>
+    <form onSubmit={submit} className="card grid w-full animate-drop gap-3 p-5 sm:grid-cols-6">
+      <div className="sm:col-span-2"><label className="label" htmlFor="m-no">詢價編號</label><input id="m-no" className="input font-mono" value={form.rfq_number} onChange={set('rfq_number')} required /></div>
+      <div className="sm:col-span-4"><label className="label" htmlFor="m-item">品名</label><input id="m-item" className="input" value={form.item_name} onChange={set('item_name')} required /></div>
+      <div className="sm:col-span-2"><label className="label" htmlFor="m-mat">材質</label><input id="m-mat" className="input" value={form.material_text} onChange={set('material_text')} required /></div>
+      <div><label className="label" htmlFor="m-qty">數量</label><input id="m-qty" className="input num" type="number" min="1" value={form.quantity} onChange={set('quantity')} required /></div>
+      <div><label className="label" htmlFor="m-unit">單位</label><select id="m-unit" className="input" value={form.unit} onChange={set('unit')}><option value="pcs">pcs</option><option value="sets">sets</option></select></div>
+      <div className="sm:col-span-2"><label className="label" htmlFor="m-need">需求日</label><input id="m-need" className="input" type="date" value={form.need_date} onChange={set('need_date')} /></div>
+      <label className="flex items-center gap-2 text-sm text-stone-600 sm:col-span-4"><input type="checkbox" checked={form.sync_mock} onChange={set('sync_mock')} />同時建在模擬對方</label>
+      <div className="flex justify-end gap-2 sm:col-span-2">
+        <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>取消</button>
+        <button className="btn-primary">建立</button>
       </div>
-
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-      {open && (
-        <form onSubmit={submit} className="card grid gap-4 p-5 sm:grid-cols-6">
-          <div className="sm:col-span-2">
-            <label className="label">詢價編號</label>
-            <input className="input font-mono" value={form.rfq_number} onChange={set('rfq_number')} required />
-          </div>
-          <div className="sm:col-span-4">
-            <label className="label">品名（原樣）</label>
-            <input className="input" value={form.item_name} onChange={set('item_name')} required />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label">材質（原樣）</label>
-            <input className="input" value={form.material_text} onChange={set('material_text')} required placeholder="例如 PLA" />
-          </div>
-          <div>
-            <label className="label">數量</label>
-            <input className="input num" type="number" min="1" value={form.quantity} onChange={set('quantity')} required />
-          </div>
-          <div>
-            <label className="label">單位</label>
-            <select className="input" value={form.unit} onChange={set('unit')}>
-              <option value="pcs">pcs（件）</option>
-              <option value="sets">sets（套）</option>
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label">需求日（可空白）</label>
-            <input className="input" type="date" value={form.need_date} onChange={set('need_date')} />
-          </div>
-          <label className="flex items-center gap-2 text-sm text-stone-600 sm:col-span-4">
-            <input type="checkbox" checked={form.sync_mock} onChange={set('sync_mock')} />
-            同時在「假澳得仕」建立這張詢價單（開發測試用）
-          </label>
-          <div className="flex justify-end sm:col-span-2">
-            <button className="btn-primary" disabled={saving}>{saving ? '建立中…' : '建立'}</button>
-          </div>
-        </form>
-      )}
-
-      <div className="card overflow-x-auto">
-        <table className="w-full min-w-[720px]">
-          <thead className="bg-stone-50">
-            <tr>
-              <th className="th">詢價編號</th>
-              <th className="th">品名／材質</th>
-              <th className="th">數量</th>
-              <th className="th">需求日</th>
-              <th className="th">狀態</th>
-              <th className="th">最新報價</th>
-              <th className="th">建立時間</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows === null && (
-              <tr><td className="td text-stone-500" colSpan={7}>載入中…</td></tr>
-            )}
-            {rows?.length === 0 && (
-              <tr><td className="td text-stone-500" colSpan={7}>還沒有詢價單。按「新增詢價單」開始；測試可用 AUD-RFQ-2026-0099。</td></tr>
-            )}
-            {rows?.map((r) => (
-              <tr key={r.id} className="hover:bg-stone-50">
-                <td className="td font-mono"><Link className="text-accent-dark hover:underline" to={`/rfqs/${r.id}`}>{r.rfq_number}</Link></td>
-                <td className="td">{r.item_name}<div className="text-xs text-stone-500">{r.material_text}</div></td>
-                <td className="td num">{r.quantity} {r.unit}</td>
-                <td className="td">{r.need_date || '—'}</td>
-                <td className="td"><Badge map={RFQ_STATUS} value={r.status} /></td>
-                <td className="td">
-                  {r.latest_quote ? (
-                    <Link to={`/quotes/${r.latest_quote.id}`} className="flex items-center gap-2 font-mono text-xs hover:underline">
-                      {r.latest_quote.quote_no} r{r.latest_quote.quote_revision}
-                      <Badge map={QUOTE_STATUS} value={r.latest_quote.status} />
-                    </Link>
-                  ) : '—'}
-                </td>
-                <td className="td text-xs text-stone-500">{dt(r.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      {error && <p className="error sm:col-span-6">{error}</p>}
+    </form>
   )
 }

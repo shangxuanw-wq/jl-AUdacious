@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 
-from .. import config, db, payload as pl
+from .. import config, db, payload as pl, spec_fields
 from ..auth import require_user
 from ..dispatcher import TERMINAL
 from ..queue_worker import enqueue, sweep
@@ -168,9 +168,29 @@ async def app_config() -> dict:
         "allow_partner_prod": s.allow_partner_prod,
         "vendor_name": s.vendor_name,
         "mock_enabled": s.mock_enabled,
+        "manual_rfq_enabled": s.manual_rfq_enabled,
         "today": taipei_today().isoformat(),
         "reply_mode": __import__("rfq_app.mail.reply", fromlist=["reply_mode"]).reply_mode(),
     }
+
+
+# 列表上的「進度」：todo 待報價、draft 草稿、sending 送出中、failed 送出失敗、review 審核中、published 已發布、closed 完成
+_DISPATCH_STAGE = {
+    "pending": "sending", "sending": "sending", "retry_wait": "sending",
+    "accepted": "review", "duplicate": "review", "published": "published",
+}
+
+
+def _stage(rfq_status: str, q_status: str | None, d_status: str | None) -> str:
+    if rfq_status == "closed":
+        return "closed"
+    if not q_status:
+        return "todo"
+    if q_status == "draft":
+        return "draft"
+    if d_status in _DISPATCH_STAGE:
+        return _DISPATCH_STAGE[d_status]
+    return "failed" if q_status == "failed" or d_status else "review"
 
 
 @router.get("/rfqs")
@@ -179,18 +199,38 @@ async def list_rfqs() -> dict:
         rows = (
             await conn.execute(
                 text(
-                    "SELECT r.*, c.code AS customer_code, "
-                    " (SELECT json_build_object('id', q.id, 'quote_no', q.quote_no, 'quote_revision', q.quote_revision, 'status', q.status) "
-                    "    FROM rfq.quotes q WHERE q.rfq_id = r.id ORDER BY q.id DESC LIMIT 1) AS latest_quote "
-                    "FROM rfq.rfqs r JOIN rfq.customers c ON c.id = r.customer_id ORDER BY r.id DESC LIMIT 200"
+                    "SELECT r.*, c.code AS customer_code, lq.q_id, lq.quote_no, lq.quote_revision, lq.q_status, lq.tax_included, lq.tax_rate, lq.currency, "
+                    "       li.unit_price, li.qty AS q_qty, ld.status AS d_status "
+                    "FROM rfq.rfqs r JOIN rfq.customers c ON c.id = r.customer_id "
+                    "LEFT JOIN LATERAL (SELECT q.id AS q_id, q.quote_no, q.quote_revision, q.status AS q_status, q.tax_included, q.tax_rate, q.currency "
+                    "                   FROM rfq.quotes q WHERE q.rfq_id = r.id ORDER BY q.id DESC LIMIT 1) lq ON true "
+                    "LEFT JOIN LATERAL (SELECT i.unit_price, i.qty FROM rfq.quote_items i WHERE i.quote_id = lq.q_id ORDER BY i.line_no LIMIT 1) li ON true "
+                    "LEFT JOIN LATERAL (SELECT d.status FROM rfq.quote_dispatches d WHERE d.quote_id = lq.q_id ORDER BY d.id DESC LIMIT 1) ld ON true "
+                    "ORDER BY r.id DESC LIMIT 200"
                 )
             )
         ).mappings()
-        return {"rfqs": [_plain(dict(r)) for r in rows]}
+        out = []
+        for r in rows:
+            r = dict(r)
+            lq = None
+            if r["q_id"]:
+                lq = {"id": r["q_id"], "quote_no": r["quote_no"], "quote_revision": r["quote_revision"], "status": r["q_status"], "dispatch_status": r["d_status"]}
+                if r["unit_price"] is not None:
+                    t = pl.compute_totals(r["unit_price"], r["q_qty"], r["tax_included"], r["tax_rate"], r["currency"])
+                    lq["currency"] = r["currency"].strip()
+                    lq["grand_total"] = pl.json_number(t.total_cents + (0 if r["tax_included"] else (t.tax_cents or 0)))
+            row = _plain({k: v for k, v in r.items() if k not in ("q_id", "quote_no", "quote_revision", "q_status", "tax_included", "tax_rate", "currency", "unit_price", "q_qty", "d_status")})
+            row["latest_quote"] = lq
+            row["stage"] = _stage(r["status"], r["q_status"], r["d_status"])
+            out.append(row)
+        return {"rfqs": out}
 
 
 @router.post("/rfqs", status_code=201)
 async def create_rfq(body: RfqIn, user: str = Depends(require_user)) -> dict:
+    if not config.settings.manual_rfq_enabled:
+        raise HTTPException(404, "詢價單只從詢價信自動建立")
     async with db.tx() as conn:
         cust = (await conn.execute(text("SELECT id FROM rfq.customers WHERE code='AUD'"))).scalar_one()
         dup = (await conn.execute(text("SELECT id FROM rfq.rfqs WHERE customer_id=:c AND rfq_number=:n"), {"c": cust, "n": body.rfq_number})).scalar()
@@ -224,7 +264,7 @@ async def get_rfq(rfq_id: int) -> dict:
         out = []
         for q in quotes:
             v = _quote_view(rfq, q, await _items(conn, q["id"]))
-            d = (await conn.execute(text("SELECT id, status, attempt_count, last_http_status, last_error_code FROM rfq.quote_dispatches WHERE quote_id=:id ORDER BY id DESC LIMIT 1"), {"id": q["id"]})).mappings().first()
+            d = (await conn.execute(text("SELECT id, status, attempt_count, last_http_status, last_error_code, created_at, updated_at FROM rfq.quote_dispatches WHERE quote_id=:id ORDER BY id DESC LIMIT 1"), {"id": q["id"]})).mappings().first()
             v["latest_dispatch"] = _plain(dict(d)) if d else None
             out.append(v)
         mock = (await conn.execute(text("SELECT number FROM mock_partner.rfqs WHERE number=:n"), {"n": rfq["rfq_number"]})).scalar()
@@ -241,7 +281,8 @@ async def get_rfq(rfq_id: int) -> dict:
         attachments = [{"n": i, "filename": a["filename"], "size": a.get("size", 0), "mime": a.get("mime")} for i, a in enumerate(latest["attachments"])] if latest else []
         for m in mails:
             m["attachment_count"] = len(m.pop("attachments") or [])
-        return {"rfq": _plain(rfq), "quotes": out, "in_mock": bool(mock), "attachments": attachments, "mails": mails}
+        spec = spec_fields.parse(rfq.get("spec_text"))
+        return {"rfq": _plain(rfq), "quotes": out, "in_mock": bool(mock), "attachments": attachments, "mails": mails, "spec_fields": spec["fields"], "dims": spec["dims"]}
 
 
 @router.post("/rfqs/{rfq_id}/quotes", status_code=201)

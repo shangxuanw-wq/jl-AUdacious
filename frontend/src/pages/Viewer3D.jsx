@@ -85,14 +85,14 @@ export default function Viewer3D({ url, kind }) {
 
         const el = box.current
         const scene = new THREE.Scene()
-        scene.background = new THREE.Color(0xf5f5f4)
+        scene.background = new THREE.Color(0xf2eee8)
         const group = new THREE.Group()
         const edgeGroup = new THREE.Group()
         let triangles = 0
         for (const { geo } of geos) triangles += (geo.index ? geo.index.count : geo.getAttribute('position').count) / 3
         for (const { geo, color } of geos) {
           const mat = new THREE.MeshStandardMaterial({
-            color: color ? new THREE.Color(color[0], color[1], color[2]) : 0xb8c4cf,
+            color: color ? new THREE.Color(color[0], color[1], color[2]) : 0xc4bbad,
             metalness: 0.15,
             roughness: 0.55,
             side: THREE.DoubleSide,

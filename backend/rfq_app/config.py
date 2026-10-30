@@ -38,6 +38,7 @@ class Settings:
     aud_trial_token: str
     partner_token: str
     mock_enabled: bool
+    manual_rfq_enabled: bool
     mail_token_key: str
     rfq_mailbox: str
     rfq_sender_allow: frozenset[str]
@@ -102,6 +103,7 @@ def load_settings() -> Settings:
         aud_trial_token=_env("AUD_TRIAL_TOKEN") or _env("AUD_PARTNER_TOKEN") or _env("RFQ_WEBHOOK_TOKEN"),
         # 站內假澳得仕（開發用）；正式對接後關掉
         mock_enabled=_env("MOCK_AUD_ENABLED", "false").lower() == "true",
+        manual_rfq_enabled=_env("MANUAL_RFQ_ENABLED", "false").lower() == "true",
         partner_token=_env("AUD_PARTNER_TOKEN") or _env("RFQ_WEBHOOK_TOKEN") or _env("AUD_TRIAL_TOKEN"),
         inline_retry_seconds=float(_env("RFQ_INLINE_RETRY_SECONDS", "45") or 45),
         mail_token_key=_env("MAIL_TOKEN_KEY"),

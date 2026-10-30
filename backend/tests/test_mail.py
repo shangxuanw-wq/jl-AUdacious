@@ -435,3 +435,15 @@ def test_inline_types_only_safe_formats():
     assert INLINE_TYPES[_ext("圖.JPG")] == "image/jpeg" and INLINE_TYPES[_ext("2D.pdf")] == "application/pdf"
     for name in ("a.svg", "a.html", "a.htm", "a.xml", "a.stp", "a.stl", "noext"):
         assert _ext(name) not in INLINE_TYPES
+
+
+def test_spec_fields_parse():
+    from rfq_app import spec_fields
+
+    text = "【測試單】說明\n製程：CNC 三軸銑削\n表面處理：原色（黑色）\n公差與要求：外形 100.0 × 70.0 × 25.0 mm；未標註公差依一般加工公差，詳見 2D 圖。\n備註：無\n回覆方式："
+    r = spec_fields.parse(text)
+    assert r["dims"] == "100.0 × 70.0 × 25.0 mm"
+    assert [f["label"] for f in r["fields"]] == ["製程", "表面處理", "外形", "公差", "備註"]
+    assert r["fields"][3]["value"] == "未標註公差依一般加工公差，詳見 2D 圖"
+    assert spec_fields.parse(None) == {"fields": [], "dims": None}
+    assert spec_fields.parse("公差與要求：±0.05")["fields"] == [{"label": "公差", "value": "±0.05"}]

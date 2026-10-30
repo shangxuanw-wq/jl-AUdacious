@@ -19,6 +19,7 @@ os.environ.update(
         "SESSION_SECRET": "test-session-secret",
         "RFQ_INLINE_RETRY_SECONDS": "0",
         "MOCK_AUD_ENABLED": "true",
+        "MANUAL_RFQ_ENABLED": "true",
     }
 )
 os.environ.pop("VERCEL", None)
