@@ -217,6 +217,10 @@ async def test_poll_creates_then_updates(client, fake):
     r = await client.get(f"/api/rfqs/{rfqs[0]['id']}/attachments/0")
     assert r.status_code == 200 and r.content == b"STEP!" and "AUD-RFQ-2026-0099-1.stp" in r.headers["content-disposition"]
     assert (await client.get(f"/api/rfqs/{rfqs[0]['id']}/attachments/5")).status_code == 404
+    # 預覽模式：STEP 不是瀏覽器能直接顯示的格式 → 仍是下載
+    r = await client.get(f"/api/rfqs/{rfqs[0]['id']}/attachments/0", params={"inline": 1})
+    assert r.headers["content-type"] == "application/octet-stream" and r.headers["content-disposition"].startswith("attachment;")
+    assert r.headers["x-content-type-options"] == "nosniff"
 
 
 async def test_poll_ignores_and_errors(client, fake, monkeypatch):
@@ -423,3 +427,11 @@ async def test_reply_without_signature_uses_vendor(client, fake):
     await client.post(f"/api/quotes/{q['id']}/send")
     m = _parse(fake.sent[0]["raw"])
     assert m.get_body(("plain",)).get_content().rstrip().endswith("--\n兆臨")
+
+
+def test_inline_types_only_safe_formats():
+    from rfq_app.mail.routes import INLINE_TYPES, _ext
+
+    assert INLINE_TYPES[_ext("圖.JPG")] == "image/jpeg" and INLINE_TYPES[_ext("2D.pdf")] == "application/pdf"
+    for name in ("a.svg", "a.html", "a.htm", "a.xml", "a.stp", "a.stl", "noext"):
+        assert _ext(name) not in INLINE_TYPES

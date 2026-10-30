@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, money } from '../api.js'
 import { Badge, DISPATCH_STATUS, QUOTE_STATUS, RFQ_STATUS } from '../labels.jsx'
+import AttachmentPreview, { previewKind } from './AttachmentPreview.jsx'
 import QuoteForm from './QuoteForm.jsx'
 
 export default function RfqDetail({ cfg }) {
@@ -9,6 +10,7 @@ export default function RfqDetail({ cfg }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [preview, setPreview] = useState(null)
   const nav = useNavigate()
 
   useEffect(() => {
@@ -64,15 +66,22 @@ export default function RfqDetail({ cfg }) {
             <div className="label">附件（最新一封信）</div>
             {data.attachments.length === 0 && <p className="text-sm text-stone-500">無</p>}
             <ul className="space-y-1 text-sm">
-              {data.attachments.map((a) => (
-                <li key={a.n}>
-                  <a className="text-accent-dark hover:underline" href={`/api/rfqs/${rfq.id}/attachments/${a.n}`}>{a.filename}</a>
-                  <span className="ml-1 text-xs text-stone-500">{a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''}</span>
+              {data.attachments.map((a, i) => (
+                <li key={a.n} className="flex items-baseline gap-1.5">
+                  <button className="min-w-0 truncate text-left text-accent-dark hover:underline" onClick={() => setPreview(i)} title={previewKind(a.filename) ? '在站內預覽' : '這個格式不能預覽'}>
+                    {a.filename}
+                  </button>
+                  <span className="shrink-0 text-xs text-stone-500">{a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''}</span>
+                  <a className="ml-auto shrink-0 text-xs text-stone-500 hover:text-stone-800 hover:underline" href={`/api/rfqs/${rfq.id}/attachments/${a.n}`}>下載</a>
                 </li>
               ))}
             </ul>
+            {data.attachments.length > 0 && <p className="mt-2 text-xs text-stone-400">點檔名可在站內預覽（圖片、PDF、STEP、STL）</p>}
           </div>
         </section>
+      )}
+      {preview !== null && data.attachments[preview] && (
+        <AttachmentPreview rfqId={rfq.id} attachments={data.attachments} index={preview} onIndex={setPreview} onClose={() => setPreview(null)} />
       )}
 
       <section className="space-y-3">

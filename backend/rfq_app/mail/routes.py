@@ -121,8 +121,24 @@ async def disconnect() -> dict:
     return {"ok": True, "removed": len(rows)}
 
 
+# 可以在瀏覽器裡直接顯示的格式（只開放圖片與 PDF；SVG/HTML 這類會跑程式的一律下載）
+INLINE_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "bmp": "image/bmp",
+    "pdf": "application/pdf",
+}
+
+
+def _ext(filename: str) -> str:
+    return filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+
 @files.get("/rfqs/{rfq_id}/attachments/{n}")
-async def download_attachment(rfq_id: int, n: int) -> Response:
+async def download_attachment(rfq_id: int, n: int, inline: bool = False) -> Response:
     async with db.tx() as conn:
         row = (
             await conn.execute(
@@ -141,8 +157,14 @@ async def download_attachment(rfq_id: int, n: int) -> Response:
         data = await gmail.get_attachment(token, row["gmail_id"], att["attachment_id"])
     except gmail.MailAuthError:
         raise HTTPException(503, "信箱授權失效，請到「信箱」重新連接")
+    media = INLINE_TYPES.get(_ext(att["filename"])) if inline else None
+    disposition = "inline" if media else "attachment"
     return Response(
         content=data,
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(att['filename'])}", "Cache-Control": "private, no-store"},
+        media_type=media or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(att['filename'])}",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
