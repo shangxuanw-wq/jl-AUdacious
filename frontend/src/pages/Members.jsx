@@ -64,11 +64,10 @@ export default function Members({ me }) {
       {error && <p className="error">{error}</p>}
       {flash && <p key={flash.text} className="notice animate-drop">{flash.text}</p>}
 
-      <form onSubmit={add} className="card animate-rise space-y-4 p-5" style={{ animationDelay: '.06s' }}>
-        <h2 className="text-base font-bold">加入</h2>
-        <div className="grid gap-3.5 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div>
-            <label className="label" htmlFor="m-target">Email 或 @網域</label>
+      <form onSubmit={add} className="card animate-rise p-4 sm:p-5" style={{ animationDelay: '.06s' }}>
+        <div className="flex flex-wrap items-end gap-2.5">
+          <div className="min-w-0 flex-[2_1_260px]">
+            <label className="label" htmlFor="m-target">加入 Email 或 @網域</label>
             <input
               id="m-target"
               className="input"
@@ -78,35 +77,22 @@ export default function Members({ me }) {
               required
               autoComplete="off"
             />
-            <p className="mt-1.5 text-xs text-stone-500">
-              {isDomain ? '整個網域的人都能用自己的 Google 帳號登入（gmail.com 這類公用信箱不能整個開放）。' : '只有這個帳號能登入，任何 Google 帳號都可以（含 Gmail）。'}
-            </p>
           </div>
-          <div>
-            <label className="label" htmlFor="m-note">備註（可空白）</label>
-            <input id="m-note" className="input" maxLength={200} placeholder="例如 業務 Amy" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+          <div className="min-w-0 flex-[1_1_160px]">
+            <label className="label" htmlFor="m-note">備註</label>
+            <input id="m-note" className="input" maxLength={200} placeholder="可空白" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </div>
+          <div className="flex-[0_1_130px]">
+            <label className="label" htmlFor="m-role">角色</label>
+            <select id="m-role" className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} title={ROLE_INFO[form.role].desc}>
+              {ROLES.map((r) => <option key={r} value={r}>{ROLE_INFO[r].label}</option>)}
+            </select>
+          </div>
+          <button className="btn-primary flex-none" disabled={busy || !form.target.trim()}><Plus />加入</button>
         </div>
-        <fieldset>
-          <legend className="label">角色</legend>
-          <div className="grid gap-2.5 sm:grid-cols-3">
-            {ROLES.map((r) => (
-              <label
-                key={r}
-                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${form.role === r ? 'border-accent bg-accent-soft/50 ring-[3px] ring-accent/10' : 'border-stone-200 hover:border-accent-line'}`}
-              >
-                <input type="radio" name="role" className="mt-1 accent-[#C2410C]" checked={form.role === r} onChange={() => setForm({ ...form, role: r })} />
-                <span>
-                  <span className="block text-sm font-medium">{ROLE_INFO[r].label}</span>
-                  <span className="block text-xs text-stone-500">{ROLE_INFO[r].desc}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <div className="flex justify-end">
-          <button className="btn-primary" disabled={busy || !form.target.trim()}><Plus />加入名單</button>
-        </div>
+        <p className="mt-2 text-xs text-stone-500">
+          {ROLE_INFO[form.role].label}：{ROLE_INFO[form.role].desc}。{form.target.trim() ? (isDomain ? '整個網域都能登入（公用信箱不能整個開放）。' : '只有這個帳號能登入。') : ''}
+        </p>
       </form>
 
       <section className="card animate-rise overflow-hidden" style={{ animationDelay: '.12s' }}>
