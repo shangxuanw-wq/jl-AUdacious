@@ -159,8 +159,8 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         )
         if tok.status_code != 200:
             return RedirectResponse("/login?error=token", status_code=302)
-        access = tok.json().get("access_token")
-        info = await client.get(GOOGLE_USERINFO, headers={"Authorization": f"Bearer {access}"})
+        access_token = tok.json().get("access_token")
+        info = await client.get(GOOGLE_USERINFO, headers={"Authorization": f"Bearer {access_token}"})
     if info.status_code != 200:
         return RedirectResponse("/login?error=userinfo", status_code=302)
     data = info.json()

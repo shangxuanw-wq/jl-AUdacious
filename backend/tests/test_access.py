@@ -84,3 +84,41 @@ async def test_admin_cannot_lock_self_out(client, monkeypatch):
     # 有網域管理員規則撐著時，可以把自己的個別規則刪掉
     await add(client, "@x-corp.com", "admin")
     assert (await client.delete(f"/api/admin/access/{rule['id']}")).status_code == 200
+
+
+async def test_google_callback_roles(client, monkeypatch):
+    """Google 登入回呼：名單內的人進得來並記錄登入；名單外的人被擋。"""
+    import httpx
+
+    real = httpx.AsyncClient
+    who = {"email": "amy@x-corp.com"}
+
+    def handler(req: httpx.Request):
+        if "token" in str(req.url):
+            return httpx.Response(200, json={"access_token": "at"})
+        return httpx.Response(200, json={"email": who["email"], "email_verified": True, "name": "Amy"})
+
+    await add(client, "@x-corp.com", "member")
+    monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(config, "settings", config.Settings(**{**config.settings.__dict__, "dev_login_email": "", "login_client_id": "cid", "login_client_secret": "sec"}))
+
+    async def login():
+        async with real(transport=httpx.ASGITransport(app=client._transport.app), base_url="http://testserver") as c:
+            r = await c.get("/api/auth/login")
+            state = r.headers["location"].split("state=")[1].split("&")[0]
+            r = await c.get("/api/auth/callback", params={"code": "c", "state": state})
+            return r, (await c.get("/api/auth/me")).json()
+
+    r, me = await login()
+    assert r.status_code == 302 and r.headers["location"] == "/"
+    assert me["email"] == "amy@x-corp.com" and me["role"] == "member" and me["name"] == "Amy"
+    from rfq_app import db
+    from sqlalchemy import text
+
+    async with db.tx() as conn:
+        row = (await conn.execute(text("SELECT via, login_count FROM rfq.user_logins WHERE email='amy@x-corp.com'"))).mappings().one()
+    assert row["via"] == "domain" and row["login_count"] == 1
+
+    who["email"] = "someone@gmail.com"
+    r, me = await login()
+    assert r.headers["location"] == "/login?error=not_allowed" and me["email"] is None
