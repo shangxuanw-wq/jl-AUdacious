@@ -89,7 +89,7 @@ export default function QuoteDetail({ cfg, me }) {
     { label: '建立草稿', sub: shortTime(q.created_at) },
     { label: '送出＋回信', sub: d ? shortTime(d.created_at) : '' },
     { label: '審核中', sub: stage === 'review' ? 'PDF 與 JSON 核對' : '' },
-    { label: '發布', sub: stage === 'published' ? '對方已發布' : '' },
+    { label: '完成', sub: stage === 'published' ? '對方已發布' : '' },
   ]
 
   return (

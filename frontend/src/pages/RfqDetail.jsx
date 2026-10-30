@@ -41,7 +41,7 @@ export default function RfqDetail({ cfg, me }) {
     { label: '收到詢價', sub: shortTime(rfq.created_at) },
     { label: '報價送出', sub: sentQuote ? shortTime(sentQuote.latest_dispatch.created_at) : '' },
     { label: '審核中', sub: stage === 'review' ? '等待對方確認' : '' },
-    { label: '發布', sub: stage === 'published' ? '對方已發布' : '' },
+    { label: '完成', sub: stage === 'published' ? '對方已發布' : '' },
   ]
   const fields = data.spec_fields || []
 
