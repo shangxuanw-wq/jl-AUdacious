@@ -39,9 +39,6 @@ const CONNECT_ERRORS = {
 
 const TABS = [
   ['all', '全部'],
-  ['created', '建單'],
-  ['updated', '更新'],
-  ['ignored', '略過'],
   ['error', '讀不懂'],
 ]
 
@@ -193,24 +190,19 @@ export default function Mail({ me }) {
 
       <section className="card animate-rise overflow-hidden" style={{ animationDelay: '.12s' }}>
         <div className="flex flex-wrap items-center gap-3 border-b border-stone-100 px-4 py-3 sm:px-5">
-          <h2 className="text-[15px] font-bold">收信紀錄</h2>
-          <div className="flex w-full gap-1 rounded-xl bg-stone-100 p-1 sm:ml-auto sm:inline-flex sm:w-auto" role="tablist">
-            {TABS.map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                role="tab"
-                aria-selected={tab === k}
-                onClick={() => setTab(k)}
-                className={`min-h-[34px] flex-1 whitespace-nowrap rounded-[9px] px-1.5 text-[13px] font-medium transition sm:flex-none sm:px-3 ${tab === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
-              >
-                {label}
-                <span className={`num ml-1 ${k === 'error' && count(k) > 0 ? 'text-red-600' : 'text-stone-400'}`}>{count(k)}</span>
-              </button>
-            ))}
-          </div>
+          <h2 className="text-[15px] font-bold">收信紀錄 <span className="font-normal text-stone-400">{s.messages.length}</span></h2>
+          {count('error') > 0 && (
+            <button
+              type="button"
+              aria-pressed={tab === 'error'}
+              onClick={() => setTab(tab === 'error' ? 'all' : 'error')}
+              className={`ml-auto inline-flex min-h-[32px] items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition ${tab === 'error' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}
+            >
+              {tab === 'error' ? '顯示全部' : `只看讀不懂 ${count('error')}`}
+            </button>
+          )}
         </div>
-        {shown.length === 0 && <p className="px-5 py-10 text-center text-sm text-stone-500">{s.messages.length === 0 ? '還沒有收到詢價信' : '沒有這類的信'}</p>}
+        {shown.length === 0 && <p className="px-5 py-10 text-center text-sm text-stone-500">{s.messages.length === 0 ? '還沒有收到詢價信' : '沒有讀不懂的信'}</p>}
         {shown.map((m) => (
           <MessageRow key={m.id} m={m} />
         ))}
