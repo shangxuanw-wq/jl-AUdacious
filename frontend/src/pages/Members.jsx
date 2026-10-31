@@ -173,7 +173,7 @@ export default function Members({ me }) {
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="card animate-rise overflow-hidden" style={{ animationDelay: '.12s' }}>
           <div className="flex flex-wrap items-center gap-3 border-b border-stone-100 px-4 py-3 sm:px-5">
-            <div className="-mx-1 max-w-full overflow-x-auto px-1"><div className="inline-flex gap-1 whitespace-nowrap rounded-xl bg-stone-100 p-1" role="tablist">
+            <div className="w-full sm:w-auto"><div className="flex w-full gap-1 whitespace-nowrap rounded-xl bg-stone-100 p-1 sm:inline-flex sm:w-auto" role="tablist">
               {FILTERS.map(([k, label]) => (
                 <button
                   key={k}
@@ -181,7 +181,7 @@ export default function Members({ me }) {
                   role="tab"
                   aria-selected={filter === k}
                   onClick={() => setFilter(k)}
-                  className={`min-h-[34px] rounded-[9px] px-2.5 text-[13px] sm:px-3 font-medium transition ${filter === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
+                  className={`min-h-[34px] flex-1 rounded-[9px] px-1.5 text-[13px] font-medium sm:flex-none sm:px-3 transition ${filter === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
                 >
                   {label}<span className="num ml-1 hidden text-stone-400 sm:inline">{count(k)}</span>
                 </button>

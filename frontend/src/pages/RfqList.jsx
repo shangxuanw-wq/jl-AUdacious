@@ -53,7 +53,7 @@ export default function RfqList({ cfg, me }) {
       {error && <p className="error">{error}</p>}
 
       <div className="flex animate-rise flex-wrap items-center gap-3" style={{ animationDelay: '.06s' }}>
-        <div className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1" role="tablist">
+        <div className="flex w-full gap-1 rounded-xl bg-stone-100 p-1 sm:inline-flex sm:w-auto" role="tablist">
           {TABS.map(([k, label]) => (
             <button
               key={k}
@@ -61,14 +61,14 @@ export default function RfqList({ cfg, me }) {
               role="tab"
               aria-selected={tab === k}
               onClick={() => setParam('tab', k)}
-              className={`min-h-[36px] rounded-[9px] px-3.5 text-sm font-medium transition ${tab === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
+              className={`min-h-[36px] flex-1 whitespace-nowrap rounded-[9px] px-2 text-sm font-medium transition sm:flex-none sm:px-3.5 ${tab === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
             >
               {label}
               {rows && <span className={`num ml-1.5 ${k === 'review' && countOf(k) > 0 ? 'text-accent' : 'text-stone-400'}`}>{countOf(k)}</span>}
             </button>
           ))}
         </div>
-        <label className="relative ml-auto w-full max-w-[360px] flex-[1_1_240px]">
+        <label className="relative w-full sm:ml-auto sm:max-w-[360px] sm:flex-[1_1_240px]">
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500"><Search /></span>
           <input
             type="search"
