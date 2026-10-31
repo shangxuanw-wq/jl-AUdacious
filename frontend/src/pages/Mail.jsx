@@ -121,7 +121,26 @@ export default function Mail({ me }) {
 
       <section className="space-y-2">
         <h2 className="text-base font-bold">最近收到的詢價信</h2>
-        <div className="card animate-rise overflow-x-auto" style={{ animationDelay: '.08s' }}>
+        <div className="card animate-rise overflow-hidden md:hidden" style={{ animationDelay: '.08s' }}>
+          {s.messages.length === 0 && <p className="px-4 py-6 text-sm text-stone-500">還沒有</p>}
+          {s.messages.map((m) => (
+            <div key={m.id} className="border-t border-stone-100 px-4 py-3.5 first:border-t-0">
+              <div className="flex items-center justify-between gap-3">
+                <Badge map={MSG_STATUS} value={m.status} />
+                <span className="num text-xs text-stone-500">{dt(m.received_at)}</span>
+              </div>
+              <div className="mt-2 text-sm leading-snug">{m.subject}</div>
+              <div className="mt-1 truncate text-xs text-stone-500">{m.from_addr}・附件 {m.attachment_count}</div>
+              {m.error && <div className="mt-1 text-xs text-stone-500">{reason(m.error)}</div>}
+              {m.rfq_id && (
+                <Link className="mt-2 inline-flex min-h-[36px] items-center font-mono text-[13px] font-medium text-accent-dark" to={`/rfqs/${m.rfq_id}`}>
+                  {m.rfq_number} →
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="card animate-rise hidden overflow-x-auto md:block" style={{ animationDelay: '.08s' }}>
           <table className="w-full min-w-[720px]">
             <thead className="bg-stone-75">
               <tr>

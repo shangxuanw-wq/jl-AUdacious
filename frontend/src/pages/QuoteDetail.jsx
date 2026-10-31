@@ -97,8 +97,8 @@ export default function QuoteDetail({ cfg, me }) {
       <div className="flex animate-rise flex-wrap items-end gap-4">
         <div className="min-w-0 flex-[1_1_420px]">
           <div className="text-[13px] text-stone-500">
-            <Link to="/" className="hover:text-stone-900">詢價單</Link> ／{' '}
-            <Link to={`/rfqs/${q.rfq_id}`} className="font-mono hover:text-stone-900">{q.rfq.rfq_number}</Link> ／
+            <Link to="/" className="-my-2 inline-block py-2 hover:text-stone-900">詢價單</Link> ／{' '}
+            <Link to={`/rfqs/${q.rfq_id}`} className="-my-2 inline-block py-2 font-mono hover:text-stone-900">{q.rfq.rfq_number}</Link> ／
           </div>
           <div className="mb-2.5 mt-1.5 flex flex-wrap items-baseline gap-2.5">
             <h1 className="font-mono text-[28px] font-semibold tracking-tight">{q.quote_no}</h1>

@@ -110,7 +110,7 @@ export default function QuoteForm({ rfq, initial, today, submitLabel, onSubmit, 
           <input id="qf-deliv" className="input" type="date" value={f.delivery_date} onChange={set('delivery_date')} min={today} />
         </div>
         <label className="col-span-2 flex min-h-[44px] items-end gap-2 pb-2.5 text-sm text-stone-700">
-          <input type="checkbox" className="h-4 w-4 accent-[#C2410C]" checked={f.tax_included} onChange={set('tax_included')} />
+          <input type="checkbox" className="h-5 w-5 accent-[#C2410C]" checked={f.tax_included} onChange={set('tax_included')} />
           合計已含稅
         </label>
         <div className="col-span-2 sm:col-span-6">

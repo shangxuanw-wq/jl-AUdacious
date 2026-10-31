@@ -181,13 +181,13 @@ export default function Members({ me }) {
                   role="tab"
                   aria-selected={filter === k}
                   onClick={() => setFilter(k)}
-                  className={`min-h-[32px] rounded-[9px] px-3 text-[13px] font-medium transition ${filter === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
+                  className={`min-h-[34px] rounded-[9px] px-2.5 text-[13px] sm:px-3 font-medium transition ${filter === k ? 'bg-white text-accent-dark shadow-sm' : 'text-stone-500 hover:text-stone-900'}`}
                 >
-                  {label} <span className="num text-stone-400">{count(k)}</span>
+                  {label}<span className="num ml-1 hidden text-stone-400 sm:inline">{count(k)}</span>
                 </button>
               ))}
             </div></div>
-            <label className="relative ml-auto w-full max-w-[280px] flex-[1_1_200px]">
+            <label className="relative w-full sm:ml-auto sm:max-w-[280px] sm:flex-[1_1_200px]">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-500"><Search /></span>
               <input type="search" className="input min-h-[38px] pl-9 text-[13px]" placeholder="搜尋 email、名字、備註" aria-label="搜尋成員" value={q} onChange={(e) => setQ(e.target.value)} />
             </label>

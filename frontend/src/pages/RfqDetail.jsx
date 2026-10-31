@@ -46,10 +46,10 @@ export default function RfqDetail({ cfg, me }) {
   const fields = data.spec_fields || []
 
   return (
-    <div className="space-y-5">
-      <div className="flex animate-rise flex-wrap items-end gap-4">
+    <div className="flex flex-col gap-5">
+      <div className="flex animate-rise flex-wrap items-end gap-4 max-lg:order-[-2]">
         <div className="min-w-0 flex-[1_1_420px]">
-          <Link to="/" className="text-[13px] text-stone-500 hover:text-stone-900">詢價單 ／</Link>
+          <Link to="/" className="-my-2 inline-block py-2 text-[13px] text-stone-500 hover:text-stone-900">詢價單 ／</Link>
           <h1 className="mb-2.5 mt-1.5 font-mono text-[28px] font-semibold tracking-tight">{rfq.rfq_number}</h1>
           <div className="flex flex-wrap gap-2">
             <span className={st.chip}>{st.label}</span>
@@ -78,8 +78,8 @@ export default function RfqDetail({ cfg, me }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-start gap-5">
-        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+      <div className="contents lg:flex lg:items-start lg:gap-5">
+        <div className="contents min-w-0 lg:flex lg:flex-[999_1_560px] lg:flex-col lg:gap-5">
           <section className="card animate-rise p-5" style={{ animationDelay: '.12s' }}>
             <div className="grid grid-cols-1 gap-4 border-b border-stone-100 pb-4 sm:grid-cols-3">
               <div><div className="label">品名</div><div className="text-[15px] font-medium">{rfq.item_name}</div></div>
@@ -128,8 +128,8 @@ export default function RfqDetail({ cfg, me }) {
           </section>
         </div>
 
-        <aside className="flex min-w-0 flex-[1_1_340px] flex-col gap-5 2xl:flex-[1_1_420px]">
-          <section className="card animate-rise p-5" style={{ animationDelay: '.24s' }}>
+        <aside className="contents min-w-0 lg:flex lg:flex-[1_1_340px] lg:flex-col lg:gap-5 2xl:flex-[1_1_420px]">
+          <section className="card animate-rise p-5 max-lg:order-[-1]" style={{ animationDelay: '.24s' }}>
             <h2 className="mb-3.5 text-base font-bold">報價</h2>
             {quotes.length === 0 && (
               <div className="rounded-xl border border-dashed border-stone-300 px-4 py-6 text-center text-sm text-stone-500">
